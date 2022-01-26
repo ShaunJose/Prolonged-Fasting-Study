@@ -1,0 +1,265 @@
+---
+title: "PF_Metabolomics_Figure 1 Biomarkers correlation"
+author: 'Volcano plots - All timepoints'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(kableExtra)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE, fig.align = 'center', fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..") #PFS directory
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions
+```{r, message=FALSE}
+source("./Functions/Metabolomics functions_SJ_GF.R")
+source("./Functions/Correlation_functions.R")
+```
+
+# Working directory and datasets
+```{r}
+load("./SCRIPTS/RDA_Non_imputed_dfs_SJ.rda")
+df_metabolomics=read.csv("./DATA/PF_Metabolomics_SJedit.csv",header=T)
+```
+
+# Format dataset structure
+
+```{r}
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_metabolomics)[-1]))
+names(group)<-colnames(df_metabolomics)[-1]
+
+# Metabolomics
+#Rownames as first column
+rownames(df_metabolomics)<-df_metabolomics[,1]
+df_metabolomics<-df_metabolomics[,-1]
+
+# Normalise each row (in case of skews)
+df_metabolomics<-data.frame(t(apply(df_metabolomics,1,BoxCoxTransf)))
+
+
+# Biomarkers
+### !! Only run following code altogether
+df_main = data.frame(Timept_ID=paste(df_fast_wide$ID,df_fast_wide$Timepoint,sep = "."),
+                     df_fast_wide[,-c(1,2)])
+
+# Transposed for convenient merging on Timepoint+ID (not used here)
+Timept_ID=df_main$Timept_ID
+df_main<- data.frame(t(df_main[,-1]))
+colnames(df_main) <- Timept_ID
+
+(NAs_cols=which(colMeans(is.na(df_main))!=0)) # Bililrubin, UrineSG, U_ketones, U_pH removed
+colSums(is.na(df_main[,NAs_cols]))
+df_main=df_main[-c(22,33,55,57),]
+
+# Normalise each row (in case of skews)
+df_main<-data.frame(t(apply(df_main,1,BoxCoxTransf)))
+```
+
+# Correlation of Figure 1 Biomarkers with Metabolites
+
+## Panel A
+
+### BHB
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Beta.hydroxy.butyrate)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "BHB"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_bhb_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "BHB", main_title="BHB Volcano Plot \n All timepoints")
+```
+
+### Cortisol
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Cortisol)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Cortisol"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_cort_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Cortisol", main_title="Cortisol Volcano Plot \n All timepoints")
+```
+
+### IGF.1
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, IGF.1)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "IGF.1"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_igf1_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "IGF.1", main_title="IGF.1 Volcano Plot \n All timepoints")
+```
+
+### FreeT3
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, FreeT3)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "FreeT3"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_t3_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "FreeT3", main_title="FreeT3 Volcano Plot \n All timepoints")
+```
+
+## Panel B
+
+### Glucose
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Glucose)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Glucose"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_gluc_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Glucose", main_title="Glucose Volcano Plot \n All timepoints")
+```
+
+### Insulin
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Insulin)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Insulin"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_ins_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Insulin", main_title="Insulin Volcano Plot \n All timepoints")
+```
+
+### Non_HDL_Chol
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Non_HDL_Chol)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Non_HDL_Chol"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_nonhdlchol_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Non_HDL_Chol", main_title="Non_HDL_Chol Volcano Plot \n All timepoints")
+```
+
+### Triglycerides
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Triglycerides)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Triglycerides"
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_merged)
+corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
+corr_tg_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Triglycerides", main_title="Triglycerides Volcano Plot \n All timepoints")
+```
+
+# Save Significant Correlated Metabolites in RDA
+
+```{r}
+# Saved in Giovanni folder since we are dealing with metabolomics
+setwd("./SCRIPTS/Giovanni")
+save(corr_bhb_all,corr_cort_all,corr_igf1_all, corr_t3_all,
+     corr_gluc_all,corr_ins_all,corr_nonhdlchol_all,corr_tg_all,
+     file="RDA_All_timepts_Correlation_Metabolites_Biomarkers.rda")
+```

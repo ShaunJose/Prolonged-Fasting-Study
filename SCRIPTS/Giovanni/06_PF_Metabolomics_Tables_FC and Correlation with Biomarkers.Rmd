@@ -1,0 +1,228 @@
+---
+title: "PF_Metabolomics_Tables_FC and Correlation with Biomarkers"
+author: 'Annotated and unannotated metabolites'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+# library(EnhancedVolcano)
+library(readxl)
+library(tibble)
+library(dplyr)
+library(stringr)
+library(forecast)
+library(kableExtra)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE, fig.align = 'center', fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study/SCRIPTS")
+knitr::opts_knit$set(root.dir = "..") # SCRIPTS folder
+# theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Load RDA files
+
+```{r}
+setwd("./Giovanni")
+load("RDA_Metabolites_FC.rda") # Fold changes in metabolites
+# load("RDA_BLEFER_Correlation_Metabolites_Biomarkers.rda") # Correlation with timepoints - only BL, EF, ER. 
+
+load("RDA_All_timepts_Correlation_Metabolites_Biomarkers.rda") #Same correlations but with all timepts.
+
+# Note: If W1 inclusion prefered, need BoxCoxTransf to work with missing values to update RDA_All_timepts_Correlation_Metabolites_Biomarkers.rda
+# Note: If W1 included in BLEFER RDA then results almost identical to All-timepts rda.
+# Note: If you want to work with W1, then load all-timepts instead of BLEFER.
+# Note: BLEFER_corr = corr_biomarker; All-timepts_corr = corr_biomarker_all
+```
+
+# Useful functions used for computing table results
+
+```{r, message=FALSE}
+# source("./Giovanni/Metabolomics functions_SJ_GF.R")
+# source("Correlation_functions.R")
+```
+
+Combining important metabolites into single list
+
+```{r}
+
+# fc_blef
+# fc_blw1
+# fc_efer
+
+## Fold change across timepoints
+# Combine all into one vector (140 elements)
+fc_comb <- c(fc_blef,
+               fc_blw1,
+               fc_efer)
+
+# Get unique ones (80)
+fc_comb_unique <- unique(fc_comb)
+
+
+## Correlations with select biomarkers - across all timepoints
+# Combine all into one vector (290 elements)
+
+# All timepts
+corr_comb <- c(corr_bhb_all,
+             corr_t3_all,
+             corr_igf1_all,
+             corr_ins_all,
+             corr_gluc_all,
+             corr_nonhdlchol_all,
+             corr_cort_all, # empty
+             corr_tg_all)   # empty
+
+# # Only BLEFER timepts
+# corr_comb <- c(corr_bhb,
+#              corr_t3,
+#              corr_igf1,
+#              corr_ins,
+#              corr_gluc,
+#              corr_nonhdlchol,
+#              corr_cort, # empty
+#              corr_tg)   # empty
+
+# Get unique ones (177)
+corr_comb_unique <- unique(corr_comb)
+
+# Test string replacement
+# test1 <- c("Xcat", "xcat", "catX", "catx", "caXt", "caxt")
+# test2 <- str_replace(test1, "X", "")
+
+# Remove "X" from the start of some elements
+# corr_comb_unique <- str_replace(corr_comb_unique, "X", "")
+# Remove "." between words in some elements
+# corr_comb_unique <- str_replace(corr_comb_unique, ".", " ")
+# Fix discrepancies - replace "X" and "."
+corr_comb_unique <- str_replace_all(corr_comb_unique, c("X" = "", "[.]" = " "))
+
+## Combine timepoint fold change set with correlation set (257)
+comb_comb <- c(fc_comb_unique,
+               corr_comb_unique)
+
+# Get unique ones (247, then 212, now 203 after fixing name discrepancies)
+corr_comb_unique <- unique(comb_comb)
+
+# Convert to dataframe
+df_corr_comb_unique <- data.frame(corr_comb_unique)
+
+# Add row numbers as a column
+df_corr_comb_unique <- tibble::rowid_to_column(df_corr_comb_unique, "Number")
+
+# Rename column using dplyr package
+df_corr_comb_unique <- df_corr_comb_unique %>% 
+  rename(BinBase.name = corr_comb_unique)
+
+```
+
+Add columns with intersect tags
+
+```{r, message=FALSE}
+
+# Add BHB_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    BHB = case_when(
+      BinBase.name %in% 
+        str_replace_all(corr_bhb_all, c("X" = "", "[.]" = " ")) ~ "BHB_cor"))
+
+# Add T3_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    T3 = case_when(
+      BinBase.name %in% 
+        str_replace_all(corr_t3_all, c("X" = "", "[.]" = " ")) ~ "T3_cor"))
+
+# Add IGF1_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    IFG1 = case_when(
+      BinBase.name %in% 
+        str_replace_all(corr_igf1_all, c("X" = "", "[.]" = " ")) ~ "IGF1_cor"))
+
+# Add Ins_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    Ins = case_when(
+      BinBase.name %in% 
+        str_replace_all(corr_ins_all, c("X" = "", "[.]" = " ")) ~ "Ins_cor"))
+
+# Add Gluc_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    Gluc = case_when(
+      BinBase.name %in% 
+        str_replace_all(corr_gluc_all, c("X" = "", "[.]" = " ")) ~ "Gluc_cor"))
+
+# Add Chol_cor tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    Chol = case_when(
+      BinBase.name %in% 
+        str_replace_all(
+          corr_nonhdlchol_all, c("X" = "", "[.]" = " ")) ~ "Chol_cor"))
+
+# Add intersect tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    blef_blw1 = case_when(
+      BinBase.name %in% 
+        blef_blw1_intrsct ~ "blef_blw1_int"))
+
+# Add intersect tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    blef_efer = case_when(
+      BinBase.name %in% 
+        blef_efer_intrsct ~ "blef_efer_int"))
+
+# Add PCA from csv (created manually)
+pca_dim1_list <- read.csv("Giovanni/PFS_significant_metabolites_PCA_Dim1_only_AM.csv",header=T,sep=",")
+# Convert to a vector
+pca_dim1_list <- pca_dim1_list[,1]
+
+# Add PCA intersect tags
+df_corr_comb_unique <- df_corr_comb_unique %>%
+  mutate(
+    PCA = case_when(
+      BinBase.name %in% 
+        pca_dim1_list ~ "PCA_int"))
+
+# Save to csv
+write.csv(df_corr_comb_unique, file="Giovanni/PFS_significant_metabolites_AM.csv",
+          row.names = FALSE, na = "")
+
+
+
+
+# Count overlaps
+
+# Count2 overlaps with PCA included
+
+# Create a rank by sorting on Counts
+
+# Add rank Column in front
+
+
+
+
+
+
+```

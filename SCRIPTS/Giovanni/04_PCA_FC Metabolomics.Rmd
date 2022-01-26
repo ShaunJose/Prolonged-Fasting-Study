@@ -1,0 +1,185 @@
+---
+title: "PF_PCA Metabolomics Fold Changes"
+author: ''
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(VennDiagram)
+
+# Clustering and PCA
+library(factoextra) # clustering algorithms & visualization
+library(cluster)    # clustering algorithms
+library(pvclust) # check bootstrap stability of cluster
+library(clValid) # choice of apt clustering algo (G Brock 2008)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..")
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions
+```{r, message=FALSE}
+source("./Functions/Metabolomics functions_SJ_GF.R")
+```
+
+# Metabolites
+
+## Working directory and datasets
+```{r}
+setwd("./DATA")
+df_metabolomics=read.csv("PF_Metabolomics_SJedit.csv",header=T)
+```
+
+## Format dataset structure
+
+```{r}
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_metabolomics)[-1]))
+names(group)<-colnames(df_metabolomics)[-1]
+
+#Rownames as first column
+rownames(df_metabolomics)<-df_metabolomics[,1]
+df_metabolomics<-df_metabolomics[,-1]
+```
+
+## FC datasets
+
+```{r}
+## Run this chunk altogether
+df_main <- select(df_metabolomics, matches(".BL|.EF|.ER"))
+
+# BLEF Fold changes
+df_blef<-NULL
+for (i in 1:(dim(df_main)[2]/3)){
+  df_blef<-cbind(df_blef,df_main[,i+20]/df_main[,i])
+}
+df_blef<-t(apply(df_blef,1,BoxCoxTransf))
+df_blef<-data.frame(scale(df_blef))
+rownames(df_blef)<-rownames(df_main)
+colnames(df_blef)<-colnames(df_main)[1:20]
+
+# EFER Fold changes
+df_efer<-NULL
+for (i in (1+dim(df_main)[2]/3):(dim(df_main)[2]*2/3)){
+  df_efer<-cbind(df_efer,df_main[,i+20]/df_main[,i])
+}
+df_efer<-t(apply(df_efer,1,BoxCoxTransf))
+df_efer<-data.frame(scale(df_efer))
+rownames(df_efer)<-rownames(df_main)
+colnames(df_efer)<-colnames(df_main)[21:40]
+```
+
+## PCA on BLEF
+
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca = prcomp(t(df_blef))
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             )+ ggtitle("Variables - BLEF")
+# See how observations are grouped
+fviz_pca_ind(res.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             ) + ggtitle("Grouped Observations - BLEF (PC1, PC2)")
+# Check both simultaneously
+fviz_pca_biplot(res.pca, repel = TRUE,
+                col.var = "#2E9FDF", # Variables color
+                col.ind = "#696969"  # Individuals color
+                ) + ggtitle("1st 2 dimensions - BLEF")
+
+# Eigenvalues
+eig.val = get_eigenvalue(res.pca)
+eig.val$cumulative.variance.percent
+loadings=res.pca$rotation # how variables move
+round(loadings[,1:7],4)
+scores = res.pca$x # observations coordinates on map (location)
+  
+# # Results for Variables
+# res.var <- get_pca_var(res.pca)
+# res.var$coord          # Coordinates
+# res.var$contrib        # Contributions to the PCs
+# res.var$cos2           # Quality of representation 
+# # Results for individuals
+# res.ind <- get_pca_ind(res.pca)
+# res.ind$coord          # Coordinates
+# res.ind$contrib        # Contributions to the PCs
+# res.ind$cos2           # Quality of representation
+```
+
+## PCA on EFER
+
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca = prcomp(t(df_efer))
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             )+ ggtitle("Variables - EFER")
+# See how observations are grouped
+fviz_pca_ind(res.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             ) + ggtitle("Grouped Observations - EFER (PC1, PC2)")
+# Check both simultaneously
+fviz_pca_biplot(res.pca, repel = TRUE,
+                col.var = "#2E9FDF", # Variables color
+                col.ind = "#696969"  # Individuals color
+                ) + ggtitle("1st 2 dimensions - EFER")
+
+# Eigenvalues
+eig.val = get_eigenvalue(res.pca)
+eig.val$cumulative.variance.percent
+loadings=res.pca$rotation # how variables move
+round(loadings[,1:7],4)
+scores = res.pca$x # observations coordinates on map (location)
+  
+# # Results for Variables
+# res.var <- get_pca_var(res.pca)
+# res.var$coord          # Coordinates
+# res.var$contrib        # Contributions to the PCs
+# res.var$cos2           # Quality of representation 
+# # Results for individuals
+# res.ind <- get_pca_ind(res.pca)
+# res.ind$coord          # Coordinates
+# res.ind$contrib        # Contributions to the PCs
+# res.ind$cos2           # Quality of representation
+```

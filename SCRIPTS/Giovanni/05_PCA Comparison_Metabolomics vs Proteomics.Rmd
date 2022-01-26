@@ -1,0 +1,191 @@
+---
+title: "PF_PCA Comparison"
+author: 'Metabolomics vs Proteomics'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(VennDiagram)
+library(readxl)# For proteomics data
+
+# Clustering and PCA
+library(factoextra) # clustering algorithms & visualization
+library(cluster)    # clustering algorithms
+library(pvclust) # check bootstrap stability of cluster
+library(clValid) # choice of apt clustering algo (G Brock 2008)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..")
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions
+```{r, message=FALSE}
+source("./Functions/Metabolomics functions_SJ_GF.R")
+```
+
+# Metabolites
+
+## Working directory and datasets
+```{r}
+setwd("./DATA")
+df_metabolomics=read.csv("PF_Metabolomics_SJedit.csv",header=T)
+```
+
+## Format dataset structure
+
+```{r}
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_metabolomics)[-1]))
+names(group)<-colnames(df_metabolomics)[-1]
+
+#Rownames as first column
+rownames(df_metabolomics)<-df_metabolomics[,1]
+df_metabolomics<-df_metabolomics[,-1]
+
+# For PCA
+df_metabolomics <- data.frame(scale(df_metabolomics))
+```
+
+## PCA
+
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca = prcomp(t(df_metabolomics))
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             )+ ggtitle("Variables - Metabolomics")
+# See how observations are grouped
+fviz_pca_ind(res.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             ) + ggtitle("Grouped Observations - Metabolomics (PC1, PC2)")
+# Check both simultaneously
+fviz_pca_biplot(res.pca, repel = TRUE,
+                col.var = "#2E9FDF", # Variables color
+                col.ind = "#696969"  # Individuals color
+                ) + ggtitle("1st 2 dimensions - Metabolomics")
+
+# Eigenvalues
+eig.val = get_eigenvalue(res.pca)
+eig.val$cumulative.variance.percent
+loadings=res.pca$rotation # how variables move
+round(loadings[order(abs(loadings[,1]), decreasing=T),1:5],4)[1:20,]
+scores = res.pca$x # observations coordinates on map (location)
+  
+# # Results for Variables
+# res.var <- get_pca_var(res.pca)
+# res.var$coord          # Coordinates
+# res.var$contrib        # Contributions to the PCs
+# res.var$cos2           # Quality of representation 
+# # Results for individuals
+# res.ind <- get_pca_ind(res.pca)
+# res.ind$coord          # Coordinates
+# res.ind$contrib        # Contributions to the PCs
+# res.ind$cos2           # Quality of representation
+```
+
+# Proteins
+
+## Working directory and datasets
+```{r}
+setwd("./DATA/PROLONGED FASTING/GTAC_somascan/PF_Somalogic_18-045")
+df_proteomics=read_excel("Cleaned_Proteomics data_AM.xlsx",sheet = "Sheet2_SJedit")
+```
+
+## Format dataset structure
+
+```{r}
+### !! Only run following code altogether
+df_proteomics = data.frame(Timept_ID=paste(df_proteomics$ID,
+                                           df_proteomics$Timepoint,sep = "."),
+                           df_proteomics[,-c(1:5)])
+
+# Transposed for convenient merging on Timepoint+ID (not used here)
+Timept_ID=df_proteomics$Timept_ID
+df_proteomics<- data.frame(t(df_proteomics[,-1]))
+colnames(df_proteomics) <- Timept_ID
+
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_proteomics)))
+names(group)<-colnames(df_proteomics)
+
+# For PCA
+df_proteomics <- data.frame(scale(df_proteomics))
+```
+
+## PCA
+
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca = prcomp(t(df_proteomics))
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             )+ ggtitle("Variables - Proteomics")
+# See how observations are grouped
+fviz_pca_ind(res.pca,
+             col.ind = "cos2", # Color by the quality of representation
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             ) + ggtitle("Grouped Observations - Proteomics (PC1, PC2)")
+# Check both simultaneously
+fviz_pca_biplot(res.pca, repel = TRUE,
+                col.var = "#2E9FDF", # Variables color
+                col.ind = "#696969"  # Individuals color
+                ) + ggtitle("1st 2 dimensions - Proteomics")
+
+# Eigenvalues
+eig.val = get_eigenvalue(res.pca)
+eig.val$cumulative.variance.percent
+loadings=res.pca$rotation # how variables move
+round(loadings[order(abs(loadings[,1]),decreasing=T),1:5],4)[1:20,]
+scores = res.pca$x # observations coordinates on map (location)
+  
+# # Results for Variables
+# res.var <- get_pca_var(res.pca)
+# res.var$coord          # Coordinates
+# res.var$contrib        # Contributions to the PCs
+# res.var$cos2           # Quality of representation 
+# # Results for individuals
+# res.ind <- get_pca_ind(res.pca)
+# res.ind$coord          # Coordinates
+# res.ind$contrib        # Contributions to the PCs
+# res.ind$cos2           # Quality of representation
+```

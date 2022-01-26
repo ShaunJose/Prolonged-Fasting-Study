@@ -37,7 +37,7 @@ theme_update(plot.title = element_text(hjust = 0.5)) # center plots
 # Useful functions
 ```{r, message=FALSE}
 #```{r results='hide', fig.keep='high'}
-source("./SCRIPTS/Giovanni/Metabolomics functions_SJ_GF.R")
+source("./Functions/Metabolomics functions_SJ_GF.R")
 ```
 
 # Working directory and datasets
