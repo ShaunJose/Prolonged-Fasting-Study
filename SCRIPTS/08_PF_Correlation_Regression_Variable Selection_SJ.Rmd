@@ -1,0 +1,239 @@
+---
+title: "PF_Correlation, Regression and Variable Selection"
+author: ''
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(Cairo) # anti-aliasing for windows
+library(GGally) # ggpairs plot
+library(knitr) # used by kableExtra,rmarkdown
+library(rmarkdown)
+library(kableExtra)  #generate tables
+library(pander)
+library(arsenal)
+require(survival)
+library(naniar) # for visualising missing data
+library(GGally) # for EDA
+library(ggcorrplot) # for correlation matrix
+library(plotly) # dynamic visualisations
+library(ggplot2)
+library(leaps) # Model selection
+library(caret) # easy machine learning workflow
+library(xgboost) # computing boosting algorithm
+library(randomForest)
+require(caTools) # split into train/test if required.
+library(glmnet) # for regularised regression and cross-validation
+library(tidyverse) # clean and wrangle data; easy data manipulation and visualization
+
+# Set working directory
+setwd("C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting")
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE)
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Working Directory & Datasets
+```{r message=FALSE}
+
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# fast_wide <- subset(fast_wide, Timepoint != "W1")
+# fast_frac_wide <- subset(fast_frac_wide, Timepoint != "W1.f")
+
+# working with fast_wide data
+attach(fast_wide)
+fast_wide$ID = as.factor(ID)
+fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+## Missing values?
+
+```{r}
+##AM add print() arguments to label each output
+(total_missing=sum(is.na(fast_wide)))
+(NAs_observations=which(rowMeans(is.na(fast_wide))!=0))
+rowMeans(is.na(fast_wide[NAs_observations,])) # out of 50 observations
+obs_totalnas=rowSums(is.na(fast_wide[NAs_observations,]))
+names(obs_totalnas)=fast_wide[NAs_observations,"Timepoint"];obs_totalnas
+# All NA-heavy ones W1 so no W1 analysis done.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+```
+
+# Datasets: BL $\to$ EF, EF $\to$ ER
+
+```{r}
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=1+((fast_wide[Timepoint=="EF",-c(1,2)]-fast_wide[Timepoint=="BL",-c(1,2)])/fast_wide[Timepoint=="BL",-c(1,2)])
+blef_change_data=select(blef_change,-matches("Weight|Waist|Lymp|Mono|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(blef_change_data)=fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(blef_change_data[,NAs_cols]))
+blef_1=blef_change_data[,-NAs_cols]
+rm(blef_change_data,blef_change)
+
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=1+((fast_wide[Timepoint=="ER",-c(1,2)]-fast_wide[Timepoint=="EF",-c(1,2)])/fast_wide[Timepoint=="EF",-c(1,2)])
+efer_change_data=select(efer_change,-matches("Weight|Waist|Lymp|Mono|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(efer_change_data)=fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+efer_1 = efer_change_data[,-NAs_cols]
+rm(efer_change_data,efer_change)
+
+detach(fast_wide)
+```
+
+## Mean-Centering datasets
+```{r}
+# Mean-centering: https://link.springer.com/article/10.3758/s13428-015-0624-x
+# Helps interecept interpretation, preserving slope and also helps a bit with multicollinearity
+centr.blef_1=scale(blef_1,center=T,scale=T)
+centr.efer_1=scale(efer_1,center=T,scale=F)
+```
+
+## Correlation matrices
+```{r}
+# Storing various correlations.
+corr.blef_1=cor(centr.blef_1, method='spearman') #32x32
+corr.efer_1=cor(centr.efer_1,method='spearman') #33x33
+corr.delta_1=cor(cbind(centr.blef_1,centr.efer_1),method='spearman') # 65x65
+```
+
+### Significant correlations
+
+Here, we simply create a function that takes in a correlation matrix as well as a threshold value as arguments, and outputs a matrix after rendering all values that don't meet the threshold as `NA`.
+
+```{r}
+sig.corr_matrices = function(corr_mat, threshold = 0.5){
+  corr_mat[abs(corr_mat)<threshold] = 0 # or 'NA' depending on visualisation used.
+  return(corr_mat)
+}
+
+#Datasets using 0.4 as threshold
+sig.corr.blef_1=sig.corr_matrices(corr.blef_1,threshold = 0.4)
+sig.corr.efer_1=sig.corr_matrices(corr.efer_1,threshold = 0.4)
+sig.corr.delta_1=sig.corr_matrices(corr.delta_1,threshold = 0.4)
+
+write.csv(sig.corr.blef_1,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting/Delta_BLEF_correlation.csv", row.names = T, na="")
+write.csv(sig.corr.efer_1,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting/Delta_EFER_correlation.csv", row.names = T, na="")
+write.csv(sig.corr.delta_1,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting/Delta_all_correlation.csv", row.names = T, na="")
+
+# For IGFBP1,IGFBP2 specifically (without PF5)
+corr.blef_1_withoutPF5=cor(centr.blef_1[-1,],method='spearman')
+sig.corr.blef_1_withoutPF5=sig.corr_matrices(corr.blef_1_withoutPF5,0.3)
+write.csv(sig.corr.blef_1_withoutPF5,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting/Delta_blef_cor_without_outlierPF5_thresh0.3.csv", row.names = T, na="")
+# more strict thresh=0.7
+sig.corr.blef_1_withoutPF5=sig.corr_matrices(corr.blef_1_withoutPF5,0.7)
+write.csv(sig.corr.blef_1_withoutPF5,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting/Delta_blef_cor_without_outlierPF5_thresh0.7.csv", row.names = T, na="")
+
+# Correlation matrices with p-values
+corr_pmat.blef_1 = cor_pmat(centr.blef_1, method='spearman')
+corr_pmat.efer_1 = cor_pmat(centr.efer_1,method='spearman')
+# sig.corr_pmat.delta_1 = cor_pmat(sig.corr.delta_1) # Messy
+
+ggcorrplot(sig.corr.blef_1, p.mat = corr_pmat.blef_1, type="lower",
+           insig = "blank", sig.level = 0.05, title="BLEF") %>% ggplotly()
+
+ggcorrplot(sig.corr.efer_1, p.mat = corr_pmat.efer_1, type="lower",
+           insig = "blank", sig.level = 0.05, title = "EFER") %>% ggplotly()
+```
+
+## Model Selection
+
+```{r}
+# BLEF
+regsubsets.out = regsubsets(BMI~centr.blef_1[,-1], data=as.data.frame(centr.blef_1), nbest=2,nvmax=12,method="exhaustive")
+regout=summary(regsubsets.out)
+exhaustive_models_blef=cbind(regout$which,regout$adjr2,regout$cp,regout$bic)
+# View(exhaustive_models_blef) # Uncomment to see entire output
+# plot(regsubsets.out, scale = "adjr2", main = "Adjusted R^2")
+# model with 12 variables
+
+# EFER
+regsubsets.out = regsubsets(BMI~centr.efer_1[,-1], data=as.data.frame(centr.efer_1), nbest=2,nvmax=12,method="seqrep")
+regout=summary(regsubsets.out)
+exhaustive_models_efer=cbind(regout$which,regout$adjr2,regout$cp,regout$bic)
+# View(exhaustive_models_efer) # Uncomment to see entire output
+# plot(regsubsets.out, scale = "adjr2", main = "Adjusted R^2")
+# model with 11 variables
+```
+
+## Regularised regression (Lasso)
+
+https://stats.stackexchange.com/questions/200242/minimum-number-of-observations-needed-for-penalized-regression
+
+```{r}
+Xs <- model.matrix(BMI~.,data=as.data.frame(centr.blef_1))[,-1]
+bmi <- centr.blef_1[,1]
+n = length(bmi)
+
+# RIDGE
+set.seed(123)
+cv.ridge=cv.glmnet(Xs,bmi,nfolds=n,alpha=0) #ridge reg & LOOCV
+cv.ridge$lambda.min
+cv.ridge$lambda.1se #best model if 1 standard error rule is applied
+coef(cv.ridge,s=cv.ridge$lambda.min) # shrinks all betas to reduce overfitting
+plot(cv.ridge) #gauge bias-variance tradeoff - a lot of noise.
+
+
+# LASSO
+cv.lasso <- cv.glmnet(Xs,bmi,nfolds=n,alpha=1) #lasso and LOOCV
+cv.lasso # Both give 12 non-zero biomarkers (slightly different)
+cv.lasso$lambda.min 
+cv.lasso$lambda.1se
+coef(cv.lasso,s=cv.lasso$lambda.min)
+coef(cv.lasso,s=cv.lasso$lambda.1se) #best model if 1 standard error rule is applied (this is only for your interest)
+plot(cv.lasso) # check the bias-variance tradeoff
+
+
+## rlm on variables selected
+blef_rlm=rlm(BMI~WBC+UreaN2+CO2+Non_HDL_Chol+FreeT3+Estradiol+Adiponectin+IGFBP.1+IGFBP.2,data=as.data.frame(scale(blef_1,center=T,scale=T)))
+summary(blef_rlm)
+plot(blef_rlm)
+blef_rlm$effects
+blef_rlm$coefficients
+
+blef_lm=lm(BMI~WBC+UreaN2+CO2+Non_HDL_Chol+FreeT3+Estradiol+Adiponectin+IGFBP.1+IGFBP.2,data=as.data.frame(scale(blef_1,center=T,scale=T)))
+summary(blef_lm)
+plot(blef_lm)
+```
+
+## Other methods to think about
+
+* XGBoost (Need to think of low sample size first: otherwise incredibly powerful): https://besjournals.onlinelibrary.wiley.com/doi/10.1111/j.1365-2656.2008.01390.x
+* Random forests (handles high-dimensional but not great for very small sample sizes) https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-9-307; https://stats.stackexchange.com/questions/192310/is-random-forest-suitable-for-very-small-data-sets
+* Bootstrap is not a cure for small sample size.
+* Principal Component Regression
+* Regularised exploratory factor analysis or Co-intertia analysis (`cia in R`)?: https://stats.stackexchange.com/questions/33067/dimension-reduction-techniques-for-very-small-sample-sizes
+* t-SNE (nonlinear dimensionality reduction)
+* RDA (regularised discriminant analysis - multilevel LDA)

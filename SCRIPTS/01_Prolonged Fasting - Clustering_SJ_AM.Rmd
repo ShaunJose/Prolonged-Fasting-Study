@@ -1,0 +1,152 @@
+---
+title: "Prolonged Fasting - Clustering & PCA"
+author: ""
+date: "Shane Jose"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE)
+```
+
+```{r}
+setwd("C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Andrius Prolonged Fasting")
+
+# fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# 
+# fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+
+fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# working with fast_wide data
+attach(fast_wide)
+fast_wide$ID = as.factor(ID)
+fast_wide$Timepoint=as.factor(Timepoint)
+
+# only baseline (for clustering participants based on similarity)
+baseline_data=fast_wide[Timepoint=="BL",]
+sum(is.na(baseline_data)) # 3 missing values
+(NAs_cols=which(colMeans(is.na(baseline_data))!=0)) # Bililrubin and UrineSG
+# baseline=na.omit(baseline_data) # better removing Bilirubin and UrineSG instead of observations?
+
+## Version 1: Without Bilirubin, UrineSG
+baseline_1 = baseline_data[,-NAs_cols]
+
+### TRIAL : CLUSTERING
+
+# https://uc-r.github.io/kmeans_clustering
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+
+# Scale baseline_1, only number columns
+scaled.baseline_1= scale(baseline_1[,-c(1,2)])
+# Add back the row names
+rownames(scaled.baseline_1)=baseline_1$ID
+baseline_1_cor_mat=cor(scaled.baseline_1)
+# View(baseline_1_cor_mat) #Uncomment to get table view in R
+dist.mat = get_dist(scaled.baseline_1) # Euclidean default
+##AM need to try pearson and esp. spearman
+
+### Dissimilarity matrix
+fviz_dist(dist.mat, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+
+### Optimal number of clusters?
+fviz_nbclust(scaled.baseline_1, kmeans, method = "wss") # 2 or 4?
+fviz_nbclust(scaled.baseline_1, kmeans, method = "silhouette") # 4
+
+# Tibshirani, Walter, Hastie
+# gap_stat = clusGap(scaled.baseline_1, FUN = kmeans, K.max = 10, B = 50)
+# fviz_gap_stat(gap_stat)
+
+# K-means clustering, 2 clusters
+baseline_1_kmeans=kmeans(scaled.baseline_1, 2,nstart=25)
+fviz_cluster(baseline_1_kmeans, data = scaled.baseline_1)
+
+# K-means clustering, 3 clusters
+baseline_1_kmeans=kmeans(scaled.baseline_1, 3,nstart=25)
+fviz_cluster(baseline_1_kmeans, data = scaled.baseline_1)
+
+baseline_1_kmeans$cluster
+
+
+# K-means clustering, 4 clusters
+baseline_1_kmeans=kmeans(scaled.baseline_1, 4,nstart=25)
+fviz_cluster(baseline_1_kmeans, data = scaled.baseline_1)
+
+### Hierarchical clustering ##AM why these choices of methods?
+baseline_1_hclust1=hclust(dist.mat)
+baseline_1_hclust2=hclust(dist.mat,method='average')
+baseline_1_hclust3=hclust(dist.mat,method='single')
+baseline_1_hclust4 = hclust(dist.mat, method = "ward.D2" )
+# Cut tree into 4 groups
+grp = cutree(baseline_1_hclust4, k = 3)
+
+# Visualize
+# par(mfrow=c(2,2),pty='m') # Uncomment to see on one plot to compare ##AM??
+print("Plot tree, method: complete linkage")
+plot(baseline_1_hclust1, cex = 0.6) # plot tree, method: complete linkage
+rect.hclust(baseline_1_hclust1, k = 3, border = 2:5) # add rectangle
+
+print("Plot tree, method: average")
+plot(baseline_1_hclust2, cex = 0.6) #average
+rect.hclust(baseline_1_hclust2, k = 3, border = 2:5) 
+
+print("Plot tree, method: single linkage")
+plot(baseline_1_hclust3, cex = 0.6) #single
+rect.hclust(baseline_1_hclust3, k = 3, border = 2:5) 
+
+print("Plot tree, method: Ward's method")
+plot(baseline_1_hclust4, cex = 0.6) # Ward's method
+rect.hclust(baseline_1_hclust4, k = 3, border = 2:5)
+
+# Bootstrap to see stability of clusters
+library(pvclust)
+baseline_1_pvclust = pvclust(t(scaled.baseline_1)) # AU around 95% implies strongly supported by data
+plot(baseline_1_pvclust)
+
+# Choice of appropriate clustering algorithm (G Brock 2008)
+library(clValid)
+library(mclust)
+
+##AM: tests suggests hierarchical with 2 clusters
+# Internal validation method 
+intern <- clValid(scaled.baseline_1, nClust = 2:8,
+                  clMethods = c("hierarchical","kmeans", "pam"), 
+                  validation = "internal")
+summary(intern)
+plot(intern)
+
+# Stability validation method
+stab <- clValid(scaled.baseline_1, nClust = 2:8,
+                  clMethods = c("hierarchical","kmeans", "pam"), 
+                  validation = "stability")
+optimalScores(stab)
+
+### PCA to see how biomarkers are correlated
+res.pca <- prcomp(scaled.baseline_1)
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+
+# Using ID as groups
+fast_wide_data=fast_wide[,-1]
+fast_wide_participants = fast_wide[,"ID"]
+
+
+
+# segregate on timepoints
+
+detach(fast_wide)
+```

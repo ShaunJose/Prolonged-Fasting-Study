@@ -1,0 +1,62 @@
+---
+title: "PF_CSV with PhenoAge"
+author: ''
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+```{r global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment=NA, warning=FALSE, message = FALSE,results = 'hide')
+knitr::opts_knit$set(root.dir = "C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician")
+```
+
+# Source functions
+
+```{r}
+source("./Functions/Biomarker_functions_SJ.R")
+```
+
+# Working Directory & Datasets
+```{r, message=FALSE}
+setwd("./Andrius Prolonged Fasting")
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+df_fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide.csv")
+
+# df_fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# df_fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# df_fast_wide <- subset(df_fast_wide, Timepoint != "W1")
+# df_fast_frac_wide <- subset(df_fast_frac_wide, Timepoint != "W1.f")
+
+# working with df_fast_wide data
+attach(df_fast_wide)
+df_fast_wide$ID = as.factor(ID)
+df_fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+# PhenoAge
+
+```{r}
+### With PhenoAge
+phenoAge=func_PhenotypicAge(df_fast_wide)
+df_fast_wide=cbind(df_fast_wide,phenoAge)
+write.csv(df_fast_wide,"./Andrius Prolonged Fasting/Blood_changes_across_timepoints_rows_wide_SJ.csv",row.names = T)
+detach(df_fast_wide)
+```

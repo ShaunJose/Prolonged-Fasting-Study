@@ -1,0 +1,607 @@
+---
+title: "Subgroup correlations"
+author: ''
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r, global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(Cairo) # anti-aliasing for windows
+library(GGally) # ggpairs plot
+library(knitr) # used by kableExtra,rmarkdown
+library(rmarkdown)
+library(kableExtra)  #generate tables
+library(pander)
+library(arsenal)
+require(survival)
+library(naniar) # for visualising missing data
+library(GGally) # for EDA
+library(ggcorrplot) # for correlation matrix
+library(plotly) # dynamic visualisations
+library(ggplot2)
+library(leaps) # Model selection
+library(caret) # easy machine learning workflow
+library(xgboost) # computing boosting algorithm
+library(randomForest)
+require(caTools) # split into train/test if required (for xgb etc.)
+library(glmnet)
+library(tidyverse) # clean and wrangle data; easy data manipulation and visualization
+
+source("../SCRIPTS/Plot_functions_AM.R")
+
+# Set working directory
+# setwd("C:/Users/AM/Google Drive/_Healthy_Longevity_Group_G/Prolonged_Fasting_Study")
+```
+
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(dev = "png", dev.args = list(type = "cairo-png")) #Windows only
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Working Directory & Datasets
+```{r, message=FALSE}
+
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+# fast_wide = read.csv("/DATA/Blood_changes_across_timepoints_rows_wide_AM.csv")
+# fast_frac_wide = read.csv("/DATA/Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# fast_wide <- subset(fast_wide, Timepoint != "W1")
+# fast_frac_wide <- subset(fast_frac_wide, Timepoint != "W1.f")
+
+# working with fast_wide data
+attach(fast_wide)
+fast_wide$ID = as.factor(ID)
+fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+## Missing values?
+
+```{r}
+##AM add print() arguments to label each output
+(total_missing=sum(is.na(fast_wide)))
+(NAs_observations=which(rowMeans(is.na(fast_wide))!=0))
+rowMeans(is.na(fast_wide[NAs_observations,])) # out of 50 observations
+obs_totalnas=rowSums(is.na(fast_wide[NAs_observations,]))
+names(obs_totalnas)=fast_wide[NAs_observations,"Timepoint"];obs_totalnas
+# All NA-heavy ones W1 so no W1 analysis done.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+
+plot(fast_wide$Timepoint,fast_wide$Triglycerides, xlab="Timepoint", ylab="Triglycerides")
+```
+
+# Datasets: BL, BL $\to$ EF, EF $\to$ ER
+
+```{r}
+# Baseline data
+bl_data=fast_wide[Timepoint=="BL",]
+rownames(bl_data)=bl_data$ID
+bl_data=bl_data[,-c(1,2)]
+baseline_data=dplyr::select(bl_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+(NAs_cols=which(colMeans(is.na(baseline_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(baseline_data[,NAs_cols]))
+baseline_1=baseline_data[,-NAs_cols]
+rm(bl_data)
+
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=1+((fast_wide[Timepoint=="EF",-c(1,2)]-fast_wide[Timepoint=="BL",-c(1,2)])/fast_wide[Timepoint=="BL",-c(1,2)])
+blef_change_data=dplyr::select(blef_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+rownames(blef_change_data)=fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(blef_change_data[,NAs_cols]))
+blef_1=blef_change_data[,-NAs_cols]
+rm(blef_change_data,blef_change)
+
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=1+((fast_wide[Timepoint=="ER",-c(1,2)]-fast_wide[Timepoint=="EF",-c(1,2)])/fast_wide[Timepoint=="EF",-c(1,2)])
+efer_change_data=dplyr::select(efer_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+rownames(efer_change_data)=fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+efer_1 = efer_change_data[,-NAs_cols]
+rm(efer_change_data,efer_change)
+
+detach(fast_wide)
+```
+
+## Mean-Centering datasets
+```{r}
+# Mean-centering: https://link.springer.com/article/10.3758/s13428-015-0624-x
+# Helps interecept interpretation, preserving slope and also helps a bit with multicollinearity
+centr.blef_1=as.data.frame(scale(blef_1,center=T,scale=F))
+centr.efer_1=as.data.frame(scale(efer_1,center=T,scale=F))
+centr.baseline_1=as.data.frame(scale(baseline_1, center=T, scale=F))
+```
+
+## Important Functions
+
+```{r}
+# IMPORTANT FUNCTIONS
+sig.corr_matrices = function(corr_mat, threshold = 0.7){
+  corr_mat[abs(corr_mat)<threshold] = 0 # or 'NA' depending on visualisation used.
+  return(corr_mat)
+}
+
+
+## Subgrouping function for delta fractional datasets
+delta_frac_subgroups = function(delta_dataset, grp_var_name, same_dir=FALSE, thresh =0.5){
+  attach(delta_dataset)
+  if (same_dir) {
+    # when biomarkers go in same direction for everyone
+    high_grp=delta_dataset[abs(grp_var_name-1) >= thresh,]
+    low_grp=delta_dataset[abs(grp_var_name-1) < thresh,] # here the group that doesn't go as high
+    num_highr=dim(high_grp)[1]
+    num_lowr=dim(low_grp)[1]
+    output_list=list("higher_grp" = high_grp, "lower_grp" = low_grp,
+                     "num_higher_grp" = num_highr,"num_lower_grp" = num_lowr)
+    
+    } else {
+    incr_grp=delta_dataset[grp_var_name >= 1,]
+    decr_grp=delta_dataset[grp_var_name < 1,]
+    num_incr=dim(incr_grp)[1]
+    num_decr=dim(decr_grp)[1]
+    output_list=list("increased_grp" = incr_grp, "decreased_grp" = decr_grp,
+                     "num_increased_grp" = num_incr,"num_decreased_grp" = num_decr)
+    }
+  detach(delta_dataset)
+  return(output_list)
+}
+
+cor_scatter_plot= function(dataset,selected_cols=1:ncol(dataset), title=""){
+  ggpairs(dataset, columns = selected_cols,
+        lower = list(continuous ="smooth"), progress = F)+
+    ggtitle(title)+
+    theme(plot.title = element_text(hjust = 0.5))
+}
+```
+
+### Opposite direction deltas
+
+#### Glucose
+```{r}
+##Delta GLUCOSE##
+# centr.blef_1
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,Glucose)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Gluc Inc") %>% ggplotly(width = 850, height = 750)
+
+cor_scatter_plot(incr_grp, c("Testosterone", "IGFBP.1", "Beta.hydroxy.butyrate",
+                            "IGF.1","BMI","IGFBP.2"), title="Data: BLEF, Grp: Gluc Inc")
+# Checked and discarded FGF.21, Creatinine and AST
+cor_scatter_plot(decr_grp, c("Testosterone", "IGFBP.1", "Beta.hydroxy.butyrate",
+                            "IGF.1","BMI","IGFBP.2"), title="Data: BLEF, Grp: Gluc Dec")
+cor_scatter_plot(centr.blef_1, c("Testosterone", "IGFBP.1", "Beta.hydroxy.butyrate",
+                            "IGF.1","BMI","IGFBP.2"), title="Data: BLEF, Grp: All 20")
+
+
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Gluc Dec") %>% ggplotly(width = 850, height = 750)
+```
+
+
+```{r, out.width="150%", out.height="150%"}
+cor_scatter_plot(decr_grp, c("Leptin", "hsCRP", "Estradiol", "FGF.21", "SHBG",
+                             "Protein","IGFBP.2","IGFBP.1","WBC","AST","Creatinine"), title="Data: BLEF, Grp: Gluc Dec")
+cor_scatter_plot(incr_grp, c("Leptin", "hsCRP", "Estradiol", "FGF.21", "SHBG",
+                             "Protein","IGFBP.2","IGFBP.1","WBC","AST","Creatinine"), title="Data: BLEF, Grp: Gluc Inc")
+cor_scatter_plot(centr.blef_1, c("Leptin", "hsCRP", "Estradiol", "FGF.21", "SHBG",
+                             "Protein","IGFBP.2","IGFBP.1","WBC","AST","Creatinine"), title="Data: BLEF, Grp: All 20")
+```
+
+```{r}
+## With baseline
+gluc_bl = cbind(blef_1$Glucose, baseline_1)
+colnames(gluc_bl)[1]="Glucose.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(gluc_bl, Glucose.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Gluc_BLEF Inc") %>% ggplotly(width = 850, height = 750)
+```
+
+
+```{r, out.width="150%", out.height="150%"}
+cor_scatter_plot(incr_grp, c("Glucose.BLEF", "IGFBP.2",
+                             "SHBG", "Non_HDL_Chol","Beta.hydroxy.butyrate",
+                             "UreaN2","IGFBP.1", "Leptin", "BMI", "FGF.21",
+                             "Triglycerides","Insulin","AST"), 
+                 title="Data: BL, Grp: Gluc_BLEF Inc")
+#Leptin, BMI, FGF all significantly correlated with each other
+cor_scatter_plot(decr_grp, c("Glucose.BLEF", "IGFBP.2",
+                             "SHBG", "Non_HDL_Chol","Beta.hydroxy.butyrate",
+                             "UreaN2","IGFBP.1", "Leptin", "BMI", "FGF.21",
+                             "Triglycerides","Insulin","AST"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec")
+cor_scatter_plot(gluc_bl, c("Glucose.BLEF", "IGFBP.2",
+                             "SHBG", "Non_HDL_Chol","Beta.hydroxy.butyrate",
+                             "UreaN2","IGFBP.1", "Leptin", "BMI", "FGF.21",
+                             "Triglycerides","Insulin","AST"), 
+                 title="Data: BL, Grp: Gluc_BLEF All 20")
+```
+
+```{r}
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Gluc_BLEF Dec") %>% ggplotly(width = 850, height = 750)
+```
+
+
+```{r, out.width="150%", out.height="150%"}
+cor_scatter_plot(decr_grp, c("Protein","Glucose.BLEF", "hsCRP", 
+                             "SHBG", "Triglycerides",
+                             "LDL","IGFBP.2",'AST',
+                             "Cholesterol", "Glucose"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec")
+
+#"LDL","IGFBP.2",'AST' correlated with each other
+# "Protein","Glucose.BLEF", "hsCRP"
+cor_scatter_plot(incr_grp, c("Protein","Glucose.BLEF", "hsCRP", 
+                             "SHBG", "Triglycerides",
+                             "LDL","IGFBP.2",'AST',
+                             "Cholesterol", "Glucose"), 
+                 title="Data: BL, Grp: Gluc_BLEF Inc")
+cor_scatter_plot(gluc_bl, c("Protein","Glucose.BLEF", "hsCRP", 
+                             "SHBG", "Triglycerides",
+                             "LDL","IGFBP.2",'AST',
+                             "Cholesterol", "Glucose"), 
+                 title="Data: BL, Grp: Gluc_BLEF All 20")
+```
+
+
+```{r}
+
+# Temporary break in code for testing
+print("Early termination of code...")
+knitr::knit_exit()
+
+```
+
+
+
+#### Insulin
+```{r}
+##Delta INSULIN##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,Insulin)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Ins Inc") %>% ggplotly(width = 850, height = 750)
+
+attach(incr_grp)
+ggpairs(as.data.frame(cbind(Beta.hydroxy.butyrate, Leptin, 
+                            BMI, IGF.1, IGFBP.1, Glucose, FreeT3)),
+        lower = list(continuous ="smooth"), progress = F)+
+  ggtitle("Data: BLEF, Grp: Ins Inc")+
+  theme(plot.title = element_text(hjust = 0.5))
+detach(incr_grp)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Ins Dec") %>% ggplotly(width = 850, height = 750)
+
+attach(decr_grp)
+ggpairs(as.data.frame(cbind(Insulin, Glucose,Beta.hydroxy.butyrate, FreeT3, Cortisol)),
+        lower = list(continuous ="smooth"), progress = F)+
+  ggtitle("Data: BLEF, Grp: Ins Dec")+
+  theme(plot.title = element_text(hjust = 0.5))
+detach(decr_grp)
+
+## With baseline
+ins_bl = cbind(blef_1$Insulin, baseline_1)
+colnames(ins_bl)[1]="Insulin.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(ins_bl, Insulin.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Ins_BLEF Inc") %>% ggplotly(width = 850, height = 750)
+
+attach(incr_grp)
+ggpairs(as.data.frame(cbind(Insulin.BLEF, IGF.1,Cortisol,
+                            Creatinine, hsCRP, Glucose, AST, Insulin,
+                            LDL, Estradiol, WBC, SHBG)),
+        lower = list(continuous ="smooth"), progress = F)+
+  ggtitle("Data: BL, Grp: Ins_BLEF Inc")+
+  theme(plot.title = element_text(hjust = 0.5))
+detach(incr_grp)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Ins_BLEF Dec") %>% ggplotly(width = 850, height = 750)
+
+attach(decr_grp)
+ggpairs(as.data.frame(cbind(Insulin.BLEF, IGF.1, Cortisol, Testosterone, Estradiol)),
+        lower = list(continuous ="smooth"), progress = F)+
+  ggtitle("Data: BL, Grp: Ins_BLEF Dec")+
+  theme(plot.title = element_text(hjust = 0.5))
+detach(decr_grp)
+```
+
+#### Triglycerides
+```{r}
+##Delta TG##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,Triglycerides)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Tg Inc") %>% ggplotly(width = 850, height = 750)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Tg Dec") %>% ggplotly(width = 850, height = 750)
+
+
+## With baseline
+tg_bl = cbind(blef_1$Triglycerides, baseline_1) # add Tg/HDL blef too if want correlations.
+colnames(tg_bl)[1]="Triglycerides.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(tg_bl, Triglycerides.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Tg_BLEF Inc") %>% ggplotly(width = 850, height = 750)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Tg_BLEF Dec") %>% ggplotly(width = 850, height = 750)
+```
+
+#### LDL
+```{r}
+##Delta LDL##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,LDL)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: LDL Inc") %>% ggplotly(width = 850, height = 750)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: LDL Dec") %>% ggplotly(width = 850, height = 750)
+
+
+## With baseline
+ldl_bl = cbind(blef_1$LDL, baseline_1)
+colnames(ldl_bl)[1]="LDL.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(ldl_bl, LDL.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+# Increased group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(incr_grp,method="pearson"))
+corr_pmat = cor_pmat(incr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: LDL_BLEF Inc") %>% ggplotly(width = 850, height = 750)
+
+# Decreased group
+corr_pearsons = sig.corr_matrices(cor(decr_grp,method="pearson"))
+corr_pmat = cor_pmat(decr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: LDL_BLEF Dec") %>% ggplotly(width = 850, height = 750)
+```
+
+### Same direction deltas
+
+#### IGF.1
+```{r}
+##Delta IGF.1##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,IGF.1,same_dir = TRUE)
+highr_grp=grps.blef$higher_grp; n_high=grps.blef$num_higher_grp
+lowr_grp=grps.blef$lower_grp; n_low=grps.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: IGF.1 High") %>% ggplotly(width = 850, height = 750)
+
+# Lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: IGF.1 Low") %>% ggplotly(width = 850, height = 750)
+
+
+## With baseline
+igf1_bl = cbind(blef_1$IGF.1, baseline_1)
+colnames(igf1_bl)[1]="IGF.1.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(igf1_bl, IGF.1.BLEF, same_dir = TRUE)
+highr_grp=grps.bio_bl.blef$higher_grp; n_high=grps.bio_bl.blef$num_higher_grp
+lowr_grp=grps.bio_bl.blef$lower_grp; n_low=grps.bio_bl.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: IGF.1_BLEF high") %>% ggplotly(width = 850, height = 750)
+
+# lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: IGF.1_BLEF low") %>% ggplotly(width = 850, height = 750)
+```
+
+#### Cortisol
+```{r}
+##Delta Cortisol##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,Cortisol,same_dir = TRUE,thresh=abs(median(Cortisol)-1))
+highr_grp=grps.blef$higher_grp; n_high=grps.blef$num_higher_grp # maybe tweak thresh here
+lowr_grp=grps.blef$lower_grp; n_low=grps.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Cort high") %>% ggplotly(width = 850, height = 750)
+
+# lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: Cort low") %>% ggplotly(width = 850, height = 750)
+
+
+## With baseline
+cort_bl = cbind(blef_1$Cortisol, baseline_1)
+colnames(cort_bl)[1]="Cortisol.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(cort_bl, Cortisol.BLEF, same_dir = TRUE,thresh=(median(blef_1$Cortisol)-1))
+highr_grp=grps.bio_bl.blef$higher_grp; n_high=grps.bio_bl.blef$num_higher_grp # maybe tweak thresh here
+lowr_grp=grps.bio_bl.blef$lower_grp; n_low=grps.bio_bl.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Cort_BLEF high") %>% ggplotly(width = 850, height = 750)
+
+# lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: Cort_BLEF low") %>% ggplotly(width = 850, height = 750)
+```
+
+#### FreeT3
+```{r}
+##Delta FreeT3##
+
+## Only BLEF
+grps.blef=delta_frac_subgroups(blef_1,FreeT3,same_dir = TRUE, thresh=abs(median(FreeT3)-1))
+highr_grp=grps.blef$higher_grp; n_high=grps.blef$num_higher_grp # definitely tweak thresh here
+lowr_grp=grps.blef$lower_grp; n_low=grps.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: T3 high") %>% ggplotly(width = 850, height = 750)
+
+# lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BLEF, Grp: T3 low") %>% ggplotly(width = 850, height = 750)
+
+
+## With baseline
+t3_bl = cbind(blef_1$FreeT3, baseline_1)
+colnames(t3_bl)[1]="FreeT3.BLEF"
+
+grps.bio_bl.blef=delta_frac_subgroups(t3_bl, FreeT3.BLEF, same_dir = TRUE,thresh=abs(median(FreeT3.BLEF)-1))
+highr_grp=grps.bio_bl.blef$higher_grp; n_high=grps.bio_bl.blef$num_higher_grp
+lowr_grp=grps.bio_bl.blef$lower_grp; n_low=grps.bio_bl.blef$num_lower_grp
+
+# Higher group
+par(mfrow=c(2,1),pty="m")
+corr_pearsons = sig.corr_matrices(cor(highr_grp,method="pearson"))
+corr_pmat = cor_pmat(highr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: T3_BLEF high") %>% ggplotly(width = 850, height = 750)
+
+# lower group
+corr_pearsons = sig.corr_matrices(cor(lowr_grp,method="pearson"))
+corr_pmat = cor_pmat(lowr_grp, method='pearson')
+ggcorrplot(corr_pearsons, p.mat = corr_pmat, type="lower",
+           insig = "blank", sig.level = 0.05, title="Data: BL, Grp: T3_BLEF low") %>% ggplotly(width = 850, height = 750)
+```

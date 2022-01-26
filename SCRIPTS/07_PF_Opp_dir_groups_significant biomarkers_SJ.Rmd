@@ -1,0 +1,610 @@
+---
+title: "PF Opp direction groups"
+author: 'Significant biomarkers (good fits)'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r, global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(Cairo) # anti-aliasing for windows
+library(GGally) # ggpairs plot
+library(knitr) # used by kableExtra,rmarkdown
+library(rmarkdown)
+library(kableExtra)  #generate tables
+library(pander)
+library(arsenal)
+require(survival)
+library(naniar) # for visualising missing data
+library(GGally) # for EDA
+library(ggcorrplot) # for correlation matrix
+library(plotly) # dynamic visualisations
+library(ggplot2)
+library(leaps) # Model selection
+library(caret) # easy machine learning workflow
+library(xgboost) # computing boosting algorithm
+library(randomForest)
+require(caTools) # split into train/test if required (for xgb etc.)
+library(glmnet)
+library(tidyverse) # clean and wrangle data; easy data manipulation and visualization
+#library(ggpubr) #For gg single scatter plots (stat_cor)
+
+# Set working directory
+setwd("C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Usyd Statistician/Andrius Prolonged Fasting")
+```
+
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment=NA, warning=FALSE, message=FALSE)
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Working Directory & Datasets
+```{r, message=FALSE}
+
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+df_fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+df_fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# df_fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# df_fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# df_fast_wide <- subset(df_fast_wide, Timepoint != "W1")
+# df_fast_frac_wide <- subset(df_fast_frac_wide, Timepoint != "W1.f")
+
+# working with df_fast_wide data
+attach(df_fast_wide)
+df_fast_wide$ID = as.factor(ID)
+df_fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+## Missing values?
+
+```{r}
+##AM add print() arguments to label each output
+(total_missing=sum(is.na(df_fast_wide)))
+(NAs_observations=which(rowMeans(is.na(df_fast_wide))!=0))
+rowMeans(is.na(df_fast_wide[NAs_observations,])) # out of 50 observations
+obs_totalnas=rowSums(is.na(df_fast_wide[NAs_observations,]))
+names(obs_totalnas)=df_fast_wide[NAs_observations,"Timepoint"];obs_totalnas
+# All NA-heavy ones W1 so no W1 analysis done.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+
+plot(df_fast_wide$Timepoint,df_fast_wide$Triglycerides, xlab="Timepoint", ylab="Triglycerides")
+```
+
+# Datasets: BL, BL $\to$ EF, EF $\to$ ER
+
+```{r, include=FALSE}
+# Baseline data
+bl_data=df_fast_wide[Timepoint=="BL",]
+rownames(bl_data)=bl_data$ID
+bl_data=bl_data[,-c(1,2)]
+df_baseline_data=dplyr::select(bl_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+(NAs_cols=which(colMeans(is.na(df_baseline_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(df_baseline_data[,NAs_cols]))
+df_baseline_1=df_baseline_data[,-NAs_cols]
+rm(bl_data)
+
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=1+((df_fast_wide[Timepoint=="EF",-c(1,2)]-df_fast_wide[Timepoint=="BL",-c(1,2)])/df_fast_wide[Timepoint=="BL",-c(1,2)])
+blef_change_data=dplyr::select(blef_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+rownames(blef_change_data)=df_fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(blef_change_data[,NAs_cols]))
+df_blef_1=blef_change_data[,-NAs_cols]
+rm(blef_change_data,blef_change)
+
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=1+((df_fast_wide[Timepoint=="ER",-c(1,2)]-df_fast_wide[Timepoint=="EF",-c(1,2)])/df_fast_wide[Timepoint=="EF",-c(1,2)])
+efer_change_data=dplyr::select(efer_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|^HDL$"))
+rownames(efer_change_data)=df_fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+df_efer_1 = efer_change_data[,-NAs_cols]
+rm(efer_change_data,efer_change)
+
+detach(df_fast_wide)
+```
+
+## Mean-Centering datasets
+```{r}
+# Mean-centering: https://link.springer.com/article/10.3758/s13428-015-0624-x
+# Helps interecept interpretation, preserving slope and also helps a bit with multicollinearity
+centr.df_blef_1=as.data.frame(scale(df_blef_1,center=T,scale=F))
+centr.df_efer_1=as.data.frame(scale(df_efer_1,center=T,scale=F))
+centr.df_baseline_1=as.data.frame(scale(df_baseline_1, center=T, scale=F))
+```
+
+## Important Functions
+
+```{r, include=FALSE}
+# IMPORTANT FUNCTIONS
+
+## Assigns 0 to correlations under threshold for easy visualisation of strong correlations
+func_sig.corr_matrices = function(corr_mat, threshold = 0.7){
+  corr_mat[abs(corr_mat)<threshold] = 0 # or 'NA' depending on visualisation used.
+  return(corr_mat)
+}
+
+## Subgrouping function for delta fractional and delta basic datasets
+func_delta_frac_subgroups = function(delta_dataset, grp_var_name,
+                                same_dir=FALSE, basic_diff=FALSE,thresh =0.5) {
+  attach(delta_dataset)
+  if (basic_diff){
+    incr_grp=delta_dataset[grp_var_name >= 0,]
+    decr_grp=delta_dataset[grp_var_name < 0,]
+    num_incr=dim(incr_grp)[1]
+    num_decr=dim(decr_grp)[1]
+    output_list=list("increased_grp" = incr_grp, "decreased_grp" = decr_grp,
+                     "num_increased_grp" = num_incr,"num_decreased_grp" = num_decr)
+  } else {
+    if (same_dir) {
+    # when biomarkers go in same direction for everyone
+    high_grp=delta_dataset[abs(grp_var_name-1) >= thresh,]
+    low_grp=delta_dataset[abs(grp_var_name-1) < thresh,] # here the group that doesn't go as high
+    num_highr=dim(high_grp)[1]
+    num_lowr=dim(low_grp)[1]
+    output_list=list("higher_grp" = high_grp, "lower_grp" = low_grp,
+                     "num_higher_grp" = num_highr,"num_lower_grp" = num_lowr)
+    
+    } else {
+    incr_grp=delta_dataset[grp_var_name >= 1,]
+    decr_grp=delta_dataset[grp_var_name < 1,]
+    num_incr=dim(incr_grp)[1]
+    num_decr=dim(decr_grp)[1]
+    output_list=list("increased_grp" = incr_grp, "decreased_grp" = decr_grp,
+                     "num_increased_grp" = num_incr,"num_decreased_grp" = num_decr)
+    }
+  }
+  detach(delta_dataset)
+  return(output_list)
+}
+
+## ggScatter plot of selected biomarkers
+func_cor_scatter_plot= function(dataset,selected_cols=1:ncol(dataset), title=""){
+  ggpairs(dataset, columns = selected_cols,
+          lower = list(continuous ="smooth"), progress = F)+
+    ggtitle(title)+
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+# Single scatter plot
+# sp <- ggscatter(df, x = "wt", y = "mpg",
+#    add = "reg.line",  # Add regressin line
+#    add.params = list(color = "blue", fill = "lightgray"), # Customize reg. line
+#    conf.int = TRUE # Add confidence interval
+#    )
+# # Add correlation coefficient
+# sp + stat_cor(method = "pearson", p.accuracy=0.001, r.accuracy=0.001)
+
+## More strict than sig.corr_matrics by only looking at significant p-values.
+func_cor_pval_plot = function(dataset,method="spearman", thresh = 0.7, sig_level=0.05,title=""){
+  corr_matrix = func_sig.corr_matrices(cor(dataset,method=method), threshold = thresh)
+  corr_pmat = cor_pmat(dataset, method=method)
+  ggcorrplot(corr_matrix, p.mat = corr_pmat, type="lower",
+             insig = "blank", sig.level = sig_level, title=title) %>% ggplotly(width=850, height=750)
+}
+
+
+## For descriptive statistics (see below)
+func_Mode = function(x) {
+  ux = unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+func_neat_descriptive_stats = function(datatable,title="", sig.figs=3){
+  
+  stats_table=data.frame(round(cbind(apply(datatable,2,mean), apply(datatable,2,sd),
+                                     apply(datatable,2,Mode),
+                                     t(apply(datatable,2,quantile))), sig.figs))
+  stats_table=pander(stats_table, keep.line.breaks = TRUE,style="grid",caption=title,
+                     col.names=c("Mean", "Std. Dev", "Mode",
+                                 "Min", "1st Q", "Median\n (2nd Q)",
+                                 "3rd Q","Max"),
+                     row.names=c("Body weight", "LDL Cholestrol\n (mg/dL)", 
+                                 "HDL Cholestrol\n (mg/dL)",
+                                 "Triglyceride, Tg\n (mg/dL)",
+                                 "Glucose-Fasting\n (mg/dL)", 
+                                 "Insulin-Fasting\n (uIU/mL)",
+                                 "C-Reactive Protein\n (ug/mL)",
+                                 "TNF-alpha \n (pg/mL)",
+                                 "Triiodothyronine, T3\n (ng/dL)", 
+                                 "Cortisol\n (ug/dL)", "IGF-1\n (ng/mL)",
+                                 "IGFBP-1\n (pg/mL)", "IGFBP-3\n (ng/mL)"),
+                     split.table=Inf)
+  return (stats_table)
+}
+
+func_elbow_test = function(criterion){
+  attach(criterion)
+  plot(1:dim(criterion[1]),AdjR2*100,pch=20,type='b',main="Elbow test", xlab="Number of explanatory variables", ylab="AdjR2")
+  plot(1:dim(exhaustive_models[1]),Cp, pch=20, type="b", col="red",
+       main="Elbow test", xlab="Number of explanatory variables", ylab="Mallow's Cp")
+  plot(1:dim(exhaustive_models[1]),BIC,  pch=20, type="b", col="blue",
+       main="Elbow test", xlab="Number of explanatory variables", ylab="BIC")
+  detach(criterion)
+  
+}
+
+func_resids_diagnostics = function(fit,explanatory_vars,title="", ident=FALSE,
+                              subtitle="", cooks_title=""){
+  par(mfcol=c(2,2),oma = c(2,0,1,0))
+  n = dim(explanatory_vars)[1]
+
+  plot(c(1:n),hat(explanatory_vars),ylim=c(0,max(hat(w))), 
+       main="(a) Leverage for datapoints", 
+       xlab="Observation Number",
+       ylab="Leverage",pch=20)
+  # segments(c(1:n),0,c(1:n),hat(w))
+  abline(h=(2*3)/n,col="red") #2(p+1)/n
+  
+  # par(pty="s")
+  p2=qqnorm(residuals(fit),
+            main="(b) Quantile-Quantile Plot",
+            xlab="Gaussian Quantiles",
+            ylab="Residuals",pch=20)
+  qqline(residuals(fit), col="red")
+  abline(v=0,col="Blue",lty=2)
+  abline(h=0,col="Blue",lty=2)
+  if (ident){
+    identify(p2, plot = TRUE)
+  }
+  
+  # par(pty="m")
+  
+  plot(fitted(fit),residuals(fit),
+       main="(c) Residual Plot",
+       xlab="Fitted Values",
+       ylab="Residuals",pch=20)
+  abline(h=0,col="blue",lty=2)
+  abline(h=c(1.96,-1.96),lty=2,col="red")
+  lines(lowess(fitted(fit),residuals(fit)), col="red")
+  # identify(fitted(fit),residuals(fit))
+  
+  plot(fitted(fit),abs(residuals(fit)),
+       main="(d) Absolute Residual Plot",
+       xlab="Fitted Values",
+       ylab="Absolute Residuals",pch=20)
+  lines(lowess(fitted(fit),abs(residuals(fit))), col="red")
+  # identify(fitted(fit),abs(residuals(fit)))
+  mtext(title, col = "red",
+        side=3,line=-1.5,outer=T,cex=1.2,font=2)
+  mtext(subtitle,
+        side=1,line=1,outer=T,cex=1.1,col='blue')
+  
+  par(mfrow=c(1,1), pty="m")
+  plot(cooks.distance(fit),pch=20, 
+       main=cooks_title, 
+       col.main="red", ylab="Cook's Distance", xlab="Observation")
+  abline(h=0.01,col='blue', lty=2)
+  mtext(subtitle,
+        side=1,line=0.5,outer=T,cex=1.1,col='blue')
+  if (ident){
+    identify(cooks.distance(fit), plot = TRUE, col='red')
+  }
+}
+```
+
+### Opposite direction deltas
+
+#### Glucose
+```{r}
+##Delta GLUCOSE##
+
+## Only BLEF
+grps.blef=func_delta_frac_subgroups(df_blef_1,Glucose)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("BMI","Glucose","IGF.1"), title="Data: BLEF, Grp: Gluc Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("Beta.hydroxy.butyrate","IGFBP.1","IGF.1"), title="Data: BLEF, Grp: Gluc Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("IGFBP.1", "Testosterone","SHBG"), title="Data: BLEF, Grp: Gluc Inc (Part III)")
+
+func_cor_scatter_plot(incr_grp, c("IGFBP.2", "SHBG"), title="Data: BLEF, Grp: Gluc Inc (Part IV)")
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("Leptin", "hsCRP"), title="Data: BLEF, Grp: Gluc Dec (I)")
+func_cor_scatter_plot(decr_grp, c("Leptin", "Estradiol"), title="Data: BLEF, Grp: Gluc Dec (II)")
+func_cor_scatter_plot(decr_grp, c("IGFBP.1", "hsCRP"), title="Data: BLEF, Grp: Gluc Dec (III)")
+
+## With baseline
+gluc_bl = cbind(df_blef_1$Glucose, df_baseline_1)
+colnames(gluc_bl)[1]="Glucose.BLEF"
+
+grps.bio_bl.blef=func_delta_frac_subgroups(gluc_bl, Glucose.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+# Increased group
+
+func_cor_scatter_plot(incr_grp, c("FGF.21","Leptin","BMI"), 
+                 title="Data: BL, Grp: Gluc_BLEF Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("FGF.21","AST","Triglycerides"), 
+                 title="Data: BL, Grp: Gluc_BLEF Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("Insulin","Triglycerides"), 
+                 title="Data: BL, Grp: Gluc_BLEF Inc (Part III)")
+
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("Glucose.BLEF", "hsCRP", "Protein"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("Triglycerides","SHBG", "Trig_HDL_Ratio"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("IGFBP.2","Adiponectin","SHBG"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec (Part III)")
+
+func_cor_scatter_plot(decr_grp, c("IGFBP.2","AST"), 
+                 title="Data: BL, Grp: Gluc_BLEF Dec (Part IV)")
+```
+
+#### Insulin
+```{r}
+##Delta INSULIN##
+
+## Only BLEF
+grps.blef=func_delta_frac_subgroups(df_blef_1,Insulin)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("Leptin", "BMI", "IGF.1"), 
+                 title="Data: BLEF, Grp: Ins Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("Beta.hydroxy.butyrate","IGFBP.1"), 
+                 title="Data: BLEF, Grp: Ins Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("BMI","IGFBP.2", "IGF.1"), 
+                 title="Data: BLEF, Grp: Ins Inc (Part III)")
+
+# Decreased group
+
+func_cor_scatter_plot(decr_grp, c("Glucose","Beta.hydroxy.butyrate", "FreeT3"), 
+                 title="Data: BLEF, Grp: Ins Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("Insulin","FreeT3"), 
+                 title="Data: BLEF, Grp: Ins Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("AlkPhos.","Beta.hydroxy.butyrate"), 
+                 title="Data: BLEF, Grp: Ins Dec (Part III)")
+
+## With baseline
+ins_bl = cbind(df_blef_1$Insulin, df_baseline_1)
+colnames(ins_bl)[1]="Insulin.BLEF"
+
+grps.bio_bl.blef=func_delta_frac_subgroups(ins_bl, Insulin.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("Glucose","AST"), 
+                 title="Data: BL, Grp: Ins_BLEF Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("Insulin.BLEF","IGF.1"), 
+                 title="Data: BL, Grp: Ins_BLEF Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("Glucose","Insulin"),
+                 title="Data: BL, Grp: Ins_BLEF Inc (Part III)")
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("FGF.21", "BMI", "Leptin"), 
+                 title="Data: BL, Grp: Ins_BLEF Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("Triglycerides", "Insulin"), 
+                 title="Data: BL, Grp: Ins_BLEF Dec (Part II)")
+```
+
+#### Triglycerides
+```{r}
+##Delta TG##
+
+## Only BLEF
+grps.blef=func_delta_frac_subgroups(df_blef_1,Triglycerides)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("Beta.hydroxy.butyrate", "Glucose",
+                             "Insulin"),
+                 title="Data: BLEF, Grp: Tg Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("Glucose", "WBC"),
+                 title="Data: BLEF, Grp: Tg Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("Triglycerides", "AST", "Trig_HDL_Ratio"),
+                 title="Data: BLEF, Grp: Tg Inc (III)")
+
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("Beta.hydroxy.butyrate", "Cholesterol", "LDL"),
+                 title="Data: BLEF, Grp: Tg Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("Trig_HDL_Ratio","IGFBP.3","IGFBP.2"),
+                 title="Data: BLEF, Grp: Tg Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("LDL", "Glucose"),
+                 title="Data: BLEF, Grp: Tg Dec (Part III)")
+
+func_cor_scatter_plot(decr_grp, c("Triglycerides", "Cortisol"),
+                 title="Data: BLEF, Grp: Tg Dec (Part IV)")
+
+func_cor_scatter_plot(decr_grp, c("Cortisol", "hsCRP"),
+                 title="Data: BLEF, Grp: Tg Dec (Part V)")
+
+func_cor_scatter_plot(decr_grp, c("Triglycerides", "Creatinine"),
+                 title="Data: BLEF, Grp: Tg Dec (Part VI)")
+
+func_cor_scatter_plot(decr_grp, c("IGFBP.1", "Creatinine"),
+                 title="Data: BLEF, Grp: Tg Dec (Part VII)")
+
+func_cor_scatter_plot(decr_grp, c("Trig_HDL_Ratio","AST"),
+                 title="Data: BLEF, Grp: Tg Dec (Part VIII)")
+
+func_cor_scatter_plot(decr_grp, c("WBC", "UreaN2"),
+                 title="Data: BLEF, Grp: Tg Dec (Part IX)")
+
+func_cor_scatter_plot(decr_grp, c("Insulin", "UreaN2"),
+                 title="Data: BLEF, Grp: Tg Dec (Part X)")
+
+func_cor_scatter_plot(decr_grp, c("LDL", "Insulin"),
+                 title="Data: BLEF, Grp: Tg Dec (Part XI)")
+
+## With baseline
+tg_bl = cbind(df_blef_1$Triglycerides, df_baseline_1)
+colnames(tg_bl)[1]="Tg.BLEF"
+
+grps.bio_bl.blef=func_delta_frac_subgroups(tg_bl, Tg.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("Leptin","BMI","FGF.21"),
+                 title="Data: BL, Grp: Tg_BLEF Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("Glucose", "Beta.hydroxy.butyrate","hsCRP"),
+                 title="Data: BL, Grp: Tg_BLEF Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("UricAcid","hsCRP"),
+                 title="Data: BL, Grp: Tg_BLEF Inc (Part III)")
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("hsCRP", "Mono"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("FGF.21", "IGFBP.1", "Tg.BLEF"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("Leptin", "BMI", "FGF.21"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part III)")
+
+func_cor_scatter_plot(decr_grp, c("Beta.hydroxy.butyrate", "CO2", "BMI"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part IV)")
+
+func_cor_scatter_plot(decr_grp, c("Lymp", "CO2"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part V)")
+
+func_cor_scatter_plot(decr_grp, c("LDL", "Triglycerides", "UricAcid"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part VI)")
+
+func_cor_scatter_plot(decr_grp, c("Adiponectin", "IGFBP.1", "Cortisol"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part VII)")
+
+func_cor_scatter_plot(decr_grp, c("Cholesterol", "IGFBP.2"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part VIII)")
+
+func_cor_scatter_plot(decr_grp, c("WBC", "Cortisol"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part IX)")
+
+func_cor_scatter_plot(decr_grp, c("Cholesterol", "IGFBP.2"),
+                 title="Data: BL, Grp: Tg_BLEF Dec (Part X)")
+```
+
+#### LDL
+```{r}
+##Delta LDL##
+
+## Only BLEF
+grps.blef=func_delta_frac_subgroups(df_blef_1,LDL)
+incr_grp=grps.blef$increased_grp; n_inc=grps.blef$num_increased_grp
+decr_grp=grps.blef$decreased_grp; n_dec=grps.blef$num_decreased_grp
+
+# Increased group
+func_cor_scatter_plot(incr_grp, c("Beta.hydroxy.butyrate", "Glucose", "Insulin"),
+                 title="Data: BLEF, Grp: LDL Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("FGF.21","Mono","AlkPhos."),
+                 title="Data: BLEF, Grp: LDL Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("Cholesterol","Non_HDL_Chol","IGFBP.3"),
+                 title="Data: BLEF, Grp: LDL Inc (Part III)")
+
+func_cor_scatter_plot(incr_grp, c("Beta.hydroxy.butyrate", "Triglycerides"),
+                 title="Data: BLEF, Grp: LDL Inc (Part IV)")
+
+func_cor_scatter_plot(incr_grp, c("BMI", "Mono"),
+                 title="Data: BLEF, Grp: LDL Inc (Part V)")
+
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("IGFBP.1","Beta.hydroxy.butyrate", "Albumin"),
+                 title="Data: BLEF, Grp: LDL Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("UreaN2", "IGFBP.3"),
+                 title="Data: BLEF, Grp: LDL Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("LDL", "Triglycerides"),
+                 title="Data: BLEF, Grp: LDL Dec (Part III)")
+
+## With baseline
+ldl_bl = cbind(df_blef_1$LDL, df_baseline_1)
+colnames(ldl_bl)[1]="LDL.BLEF"
+
+grps.bio_bl.blef=func_delta_frac_subgroups(ldl_bl, LDL.BLEF)
+incr_grp=grps.bio_bl.blef$increased_grp; n_inc=grps.bio_bl.blef$num_increased_grp
+decr_grp=grps.bio_bl.blef$decreased_grp; n_dec=grps.bio_bl.blef$num_decreased_grp
+
+
+# Increased group
+
+func_cor_scatter_plot(incr_grp, c("Insulin", "Leptin","BMI","FGF.21"),
+                 title="Data: BL, Grp: LDL_BLEF Inc (Part I)")
+
+func_cor_scatter_plot(incr_grp, c("IGFBP.1","IGFBP.2","Beta.hydroxy.butyrate"),
+                 title="Data: BL, Grp: LDL_BLEF Inc (Part II)")
+
+func_cor_scatter_plot(incr_grp, c("Creatinine", "LDL"),
+                 title="Data: BL, Grp: LDL_BLEF Inc (Part III)")
+
+func_cor_scatter_plot(incr_grp, c("IGFBP.2","CO2"),
+                 title="Data: BL, Grp: LDL_BLEF Inc (Part IV)")
+
+func_cor_scatter_plot(incr_grp, c("Triglycerides", "SHBG","Trig_HDL_Ratio"),
+                 title="Data: BL, Grp: LDL_BLEF Inc (Part V)")
+
+
+# Decreased group
+func_cor_scatter_plot(decr_grp, c("Insulin","FGF.21"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part I)")
+
+func_cor_scatter_plot(decr_grp, c("LDL", "SHBG"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part II)")
+
+func_cor_scatter_plot(decr_grp, c("BMI","FGF.21","AST"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part III)")
+
+func_cor_scatter_plot(decr_grp, c("Mono","Protein","IGFBP.3"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part IV)")
+
+func_cor_scatter_plot(decr_grp, c("Cortisol", "Insulin","Triglycerides"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part V)")
+
+func_cor_scatter_plot(decr_grp, c("Adiponectin", "Albumin"),
+                 title="Data: BL, Grp: LDL_BLEF Dec (Part VI)")
+```

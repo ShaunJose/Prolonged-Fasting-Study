@@ -1,0 +1,214 @@
+---
+title: "PF_Glucose Analysis"
+author: ''
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(Cairo) # anti-aliasing for windows
+library(GGally) # ggpairs plot
+library(knitr) # used by kableExtra,rmarkdown
+library(rmarkdown)
+library(kableExtra)  #generate tables
+library(pander)
+library(arsenal)
+require(survival)
+library(naniar) # for visualising missing data
+library(GGally) # for EDA
+library(ggcorrplot) # for correlation matrix
+library(plotly) # dynamic visualisations
+library(ggplot2)
+library(leaps) # Model selection
+library(caret) # easy machine learning workflow
+library(xgboost) # computing boosting algorithm
+library(randomForest)
+require(caTools) # split into train/test if required (for xgb etc.)
+library(glmnet)
+library(tidyverse) # clean and wrangle data; easy data manipulation and visualization
+
+# Set working directory
+setwd("C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Andrius Prolonged Fasting")
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE)
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Working Directory & Datasets
+```{r message=FALSE}
+
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# fast_wide <- subset(fast_wide, Timepoint != "W1")
+# fast_frac_wide <- subset(fast_frac_wide, Timepoint != "W1.f")
+
+# working with fast_wide data
+attach(fast_wide)
+fast_wide$ID = as.factor(ID)
+fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+## Missing values?
+
+```{r}
+##AM add print() arguments to label each output
+(total_missing=sum(is.na(fast_wide)))
+(NAs_observations=which(rowMeans(is.na(fast_wide))!=0))
+rowMeans(is.na(fast_wide[NAs_observations,])) # out of 50 observations
+obs_totalnas=rowSums(is.na(fast_wide[NAs_observations,]))
+names(obs_totalnas)=fast_wide[NAs_observations,"Timepoint"];obs_totalnas
+# All NA-heavy ones W1 so no W1 analysis done.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+
+plot(fast_wide$Timepoint,fast_wide$Glucose)
+```
+
+# Datasets: BL $\to$ EF, EF $\to$ ER
+
+```{r}
+# Baseline data
+bl_data=fast_wide[Timepoint=="BL",]
+rownames(bl_data)=bl_data$ID
+bl_data=bl_data[,-c(1,2)]
+baseline_data=dplyr::select(bl_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+(NAs_cols=which(colMeans(is.na(baseline_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(baseline_data[,NAs_cols]))
+baseline_1=baseline_data[,-NAs_cols]
+rm(bl_data)
+
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=1+((fast_wide[Timepoint=="EF",-c(1,2)]-fast_wide[Timepoint=="BL",-c(1,2)])/fast_wide[Timepoint=="BL",-c(1,2)])
+blef_change_data=dplyr::select(blef_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(blef_change_data)=fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(blef_change_data[,NAs_cols]))
+blef_1=blef_change_data[,-NAs_cols]
+rm(blef_change_data,blef_change)
+
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=1+((fast_wide[Timepoint=="ER",-c(1,2)]-fast_wide[Timepoint=="EF",-c(1,2)])/fast_wide[Timepoint=="EF",-c(1,2)])
+efer_change_data=dplyr::select(efer_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(efer_change_data)=fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+efer_1 = efer_change_data[,-NAs_cols]
+rm(efer_change_data,efer_change)
+
+detach(fast_wide)
+```
+
+## Mean-Centering datasets
+```{r}
+# Mean-centering: https://link.springer.com/article/10.3758/s13428-015-0624-x
+# Helps interecept interpretation, preserving slope and also helps a bit with multicollinearity
+centr.blef_1=as.data.frame(scale(blef_1,center=T,scale=T))
+centr.efer_1=as.data.frame(scale(efer_1,center=T,scale=F))
+centr.baseline_1=as.data.frame(scale(baseline_1, center=T, scale=F))
+```
+
+## $\Delta$ Glucose (BLEF) with Baseline data
+
+```{r}
+sig.corr_matrices = function(corr_mat, threshold = 0.5){
+  corr_mat[abs(corr_mat)<threshold] = 0 # or 'NA' depending on visualisation used.
+  return(corr_mat)
+}
+
+gluc_bl = cbind(blef_1$Glucose, baseline_1)
+colnames(gluc_bl)[1]="Glucose.BLEF"
+
+#Spearmans
+corr_sp_gluc_bl = sig.corr_matrices(cor(gluc_bl,method="spearman"), 0.4)
+corr_pmat.gluc_bl = cor_pmat(gluc_bl, method='spearman')
+ggcorrplot(corr_sp_gluc_bl, p.mat = corr_pmat.gluc_bl, type="lower",
+           insig = "blank", sig.level = 0.05, title="Gluc_BLEF with baseline") %>% ggplotly()
+```
+
+## $\Delta$ Glucose (EFER) with Baseline as EF-data
+
+```{r}
+attach(fast_wide)
+ef_data=fast_wide[Timepoint=="EF",]
+rownames(ef_data)=ef_data$ID
+ef_data=ef_data[,-c(1,2)]
+fasting_data=dplyr::select(ef_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+(NAs_cols=which(colMeans(is.na(fasting_data))!=0)) # None: Kept Bilirubin and UrineSG
+colSums(is.na(fasting_data[,NAs_cols]))
+detach(fast_wide)
+
+gluc_ef = cbind(efer_1$Glucose,fasting_data) # With EF as baseline
+colnames(gluc_ef)[1]="Glucose.EFER"
+
+#Spearmans
+corr.gluc_ef=cor(gluc_ef,method="spearman")
+corr_sp_gluc_ef = sig.corr_matrices(cor(gluc_ef,method="spearman"), 0.4)
+corr_pmat.gluc_ef = cor_pmat(gluc_ef, method='spearman')
+ggcorrplot(corr_sp_gluc_ef, p.mat = corr_pmat.gluc_ef, type="lower",
+           insig = "blank", sig.level = 0.05, title="Gluc_EFER with baseline as EF") %>% ggplotly()
+```
+
+## Regularised regression (Lasso)
+
+```{r}
+Xs <- model.matrix(Glucose~.-BMI,data=as.data.frame(centr.blef_1))[,-1]
+gluc <- centr.blef_1[,5] # Glucose
+n = length(gluc)
+
+# RIDGE
+set.seed(123)
+cv.ridge=cv.glmnet(Xs,gluc,nfolds=n,alpha=0) #ridge reg & LOOCV
+cv.ridge$lambda.min
+cv.ridge$lambda.1se #best model if 1 standard error rule is applied
+coef(cv.ridge,s=cv.ridge$lambda.min) # shrinks all betas to reduce overfitting
+plot(cv.ridge) #gauge bias-variance tradeoff - a lot of noise (weird..) seems off due to 30 variables involved (n<p)
+
+
+# LASSO
+cv.lasso <- cv.glmnet(Xs,gluc,nfolds=n,alpha=1) #lasso and LOOCV
+cv.lasso # Both give 12 non-zero biomarkers (slightly different)
+cv.lasso$lambda.min 
+cv.lasso$lambda.1se
+coef(cv.lasso,s=cv.lasso$lambda.min)
+coef(cv.lasso,s=cv.lasso$lambda.1se) #best model if 1 standard error rule is applied (this is only for your interest)
+plot(cv.lasso) # check the bias-variance tradeoff
+
+
+## rlm on variables selected
+blef_rlm=rlm(Glucose~WBC+AST+UricAcid+Non_HDL_Chol+Beta.hydroxy.butyrate+Cortisol+FreeT3+Insulin+IGFBP.1+Leptin,data=as.data.frame(scale(centr.blef_1,center=T,scale=T)))
+summary(blef_rlm)
+plot(blef_rlm)
+blef_rlm$effects
+blef_rlm$coefficients
+
+blef_lm=lm(Glucose~WBC+AST+UricAcid+Non_HDL_Chol+Beta.hydroxy.butyrate+Cortisol+FreeT3+Insulin+IGFBP.1+Leptin,data=as.data.frame(scale(centr.blef_1,center=T,scale=T)))
+summary(blef_lm)
+plot(blef_lm)
+```

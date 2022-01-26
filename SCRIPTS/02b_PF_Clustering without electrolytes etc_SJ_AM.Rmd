@@ -1,0 +1,584 @@
+---
+title: "PF_Clustering_without electryoltes etc"
+author: ''
+date: "SJ, AM"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(ggplot2)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE)
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+# Working Directory & Datasets
+```{r message=FALSE}
+
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+setwd("C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Andrius Prolonged Fasting")
+fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# 
+# fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# fast_wide <- subset(fast_wide, Timepoint != "W1")
+# fast_frac_wide <- subset(fast_frac_wide, Timepoint != "W1.f")
+
+# working with fast_wide data
+attach(fast_wide)
+fast_wide$ID = as.factor(ID)
+fast_wide$Timepoint=as.factor(Timepoint)
+
+```
+
+## Missing values?
+
+```{r}
+
+##AM add print() arguments to label each output
+total_missing=sum(is.na(fast_wide))
+(NAs_observations=which(rowMeans(is.na(fast_wide))!=0))
+rowMeans(is.na(fast_wide[NAs_observations,])) # out of 50 observations
+rowSums(is.na(fast_wide[NAs_observations,]))
+fast_wide[NAs_observations,"Timepoint"] # All NA-heavy ones W1 so it's fine.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+```
+
+# Only Baseline
+```{r}
+library(dplyr) #for data manipulation
+# only baseline (for clustering participants based on similarity)
+bl_data=fast_wide[Timepoint=="BL",]
+
+# Remove unwanted variables from clustering
+baseline_data=select(bl_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Lymp|Mono|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+sum(is.na(baseline_data)) # 3 missing values
+(NAs_cols=which(colMeans(is.na(baseline_data))!=0)) # Bililrubin and UrineSG
+# baseline=na.omit(baseline_data) # better removing Bilirubin and UrineSG instead of observations?
+
+```
+
+## Version 1: Without Bilirubin and UrineSG (missing)
+```{r}
+## Version 1: Without Bilirubin, UrineSG
+baseline_1 = baseline_data[,-NAs_cols]
+```
+
+### Scaling
+```{r}
+### TRIAL : CLUSTERING
+
+# https://uc-r.github.io/kmeans_clustering
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+
+scaled.baseline_1= scale(baseline_1[,-c(1,2)]) #removing timepoint and ID cols.
+rownames(scaled.baseline_1)=baseline_1$ID
+baseline_1_cor_mat=cor(scaled.baseline_1)
+# View(baseline_1_cor_mat) #Uncomment to get table view in R
+```
+
+### Dissimilarity Matrix
+```{r}
+dist.mat = get_dist(scaled.baseline_1) # Euclidean default
+
+### Dissimilarity matrix
+fviz_dist(dist.mat, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+### Optimal number of clusters
+```{r}
+
+### Optimal number of clusters?
+fviz_nbclust(scaled.baseline_1, kmeans, method = "wss") # 2 or 4?
+fviz_nbclust(scaled.baseline_1, kmeans, method = "silhouette") # 4
+
+# Tibshirani, Walter, Hastie
+# gap_stat = clusGap(scaled.baseline_1, FUN = kmeans, K.max = 10, B = 50)
+# fviz_gap_stat(gap_stat)
+```
+
+#### K-Means
+```{r}
+
+##AM let's plot several k-means to see visually
+# K-means clustering, 2 clusters
+baseline_1_kmeans2 = kmeans(scaled.baseline_1, 2,nstart=25)
+fviz_cluster(baseline_1_kmeans2, data = scaled.baseline_1)
+
+# K-means clustering, 3 clusters
+baseline_1_kmeans3 = kmeans(scaled.baseline_1, 3,nstart=25)
+fviz_cluster(baseline_1_kmeans3, data = scaled.baseline_1)
+
+# K-means clustering, 4 clusters - last, to keep clusters
+baseline_1_kmeans4 = kmeans(scaled.baseline_1, 4,nstart=25)
+fviz_cluster(baseline_1_kmeans4, data = scaled.baseline_1)
+
+```
+
+#### Hierchical Clustering
+```{r}
+### Hierarchical clustering
+baseline_1_hclust1 = hclust(dist.mat) #complete linkage
+baseline_1_hclust2 = hclust(dist.mat,method='average')
+baseline_1_hclust3 = hclust(dist.mat,method='single')
+baseline_1_hclust4 = hclust(dist.mat, method = "ward.D2")
+
+# Cut tree into 4 groups
+grp1 = cutree(baseline_1_hclust1, k = 4)
+grp2 = cutree(baseline_1_hclust2, k = 4)
+grp3 = cutree(baseline_1_hclust3, k = 4)
+grp4 = cutree(baseline_1_hclust4, k = 4)
+
+##AM add ID column as a variable for handling after, column names
+cluster_labels_df = data.frame(baseline_1$ID, baseline_1_kmeans2$cluster,
+                               baseline_1_kmeans3$cluster,
+                               baseline_1_kmeans4$cluster, 
+                               grp1,grp2,grp3,grp4)
+colnames(cluster_labels_df)=c("ID", "kmeans2", "kmeans3","kmeans4",
+                              "hclust_comp", "hclust_avg", 
+                              "hclust_sngl", "hclust_ward")
+
+##SJ read.csv(filename,row.names=T,header=T) 
+#SJ for importing written csv in next line
+
+# write.csv(cluster_labels_df,"../DATA/Cluster labels baseline_without_e_AM.csv", row.names = F)
+write.csv(cluster_labels_df,"C:/Users/SJ/Desktop/Backup Mac/Desktop/STUDY/Andrius Prolonged Fasting/Cluster labels baseline (4 clusters).csv", row.names = T)
+
+
+##AM for some reason csv does not get save when I render html,
+# only when I run this chunk in RStudio
+
+# Visualize
+# par(mfrow=c(2,2),pty='m') # Uncomment to see on one plot to compare
+plot(baseline_1_hclust1, cex = 0.6) # plot tree complete linkage
+rect.hclust(baseline_1_hclust1, k = 4, border = 2:5) # add rectangle
+
+plot(baseline_1_hclust2, cex = 0.6) #average
+rect.hclust(baseline_1_hclust2, k = 4, border = 2:5) 
+
+plot(baseline_1_hclust3, cex = 0.6) #single
+rect.hclust(baseline_1_hclust3, k = 4, border = 2:5) 
+
+plot(baseline_1_hclust4, cex = 0.6) # Ward's method
+rect.hclust(baseline_1_hclust4, k = 4, border = 2:5)
+```
+
+#### Stability of clusters
+```{r results='hide', fig.keep='high'}
+
+# Bootstrap to see stability of clusters
+library(pvclust)
+##AM I am using this to see BP values between rows (patients)
+##AM complete and ward methods seem to be best with this data
+baseline_1_pvclust1 = pvclust(scaled.baseline_1,
+                              method.hclust="complete")
+baseline_1_pvclust2 = pvclust(scaled.baseline_1,
+                              method.hclust="ward.D2") 
+
+baseline_1_pvclust3 = pvclust(t(scaled.baseline_1),
+                              method.hclust="complete")
+baseline_1_pvclust4 = pvclust(t(scaled.baseline_1),
+                              method.hclust="ward.D2")
+# AU around 95% implies strongly supported by data
+plot(baseline_1_pvclust1)
+pvrect(baseline_1_pvclust1, alpha = 0.90)
+plot(baseline_1_pvclust2)
+pvrect(baseline_1_pvclust2, alpha = 0.90)
+plot(baseline_1_pvclust3)
+pvrect(baseline_1_pvclust3, alpha = 0.90)
+plot(baseline_1_pvclust4)
+pvrect(baseline_1_pvclust4, alpha = 0.90)
+
+```
+
+#### Most appropriate clustering method?
+```{r}
+# Choice of appropriate clustering algorithm (G Brock 2008)
+##AM only showing optimal scores and plots; hc and km come close, 2,3,4 clusters
+library(clValid)
+intern <- clValid(scaled.baseline_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "internal")
+optimalScores(intern)
+par(mfrow=c(1,3))
+plot(intern)
+
+stab <- clValid(scaled.baseline_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "stability")
+optimalScores(stab)
+# summary(stab)
+par(mfrow=c(2,2))
+plot(stab)
+
+```
+
+### PCA
+```{r results='hide', fig.keep='high'}
+##AM I would leave BMI as mprtant characteristic at BL and W1 - agreed.
+res.pca <- prcomp(scaled.baseline_1)
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+
+##SJ To see interactions with only biomarkers - 
+##SJ useful for model selection+resids diagnostics for gam/lm outputs with BMI as response.
+### PCA without BMI and weight (only biomarkers)
+res.pca <- prcomp(scaled.baseline_1[,-1])
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+```
+
+```{r}
+
+# Temporary break in code for testing
+print("Early termination of code...")
+knitr::knit_exit()
+
+```
+
+*** 
+
+# BL $\to$ EF
+```{r}
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=1+((fast_wide[Timepoint=="EF",-c(1,2)]-fast_wide[Timepoint=="BL",-c(1,2)])/fast_wide[Timepoint=="BL",-c(1,2)])
+blef_change_data=select(blef_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(blef_change_data)=fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG similar to baseline_data
+colSums(is.na(blef_change_data[,NAs_cols]))
+```
+
+## Version 1: Without Bilirubin and UrineSG (missing)
+```{r}
+## Version 1: Without Bilirubin, UrineSG
+blef_1 = blef_change_data[,-NAs_cols]
+```
+
+### Scaling
+```{r}
+### TRIAL : CLUSTERING
+
+scaled.blef_1= scale(blef_1)
+rownames(scaled.blef_1)=rownames(blef_change_data)
+blef_1_cor_mat=cor(scaled.blef_1)
+# View(blef_1_cor_mat) #Uncomment to get table view in R
+```
+
+### Dissimilarity Matrix
+```{r}
+dist.mat = get_dist(scaled.blef_1) # Euclidean default
+
+### Dissimilarity matrix
+fviz_dist(dist.mat, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+### Optimal number of clusters
+```{r}
+### Optimal number of clusters?
+fviz_nbclust(scaled.blef_1, kmeans, method = "wss") # 2 or 5?
+fviz_nbclust(scaled.blef_1, kmeans, method = "silhouette") # 5
+
+# Tibshirani, Walter, Hastie
+# gap_stat = clusGap(scaled.blef_1, FUN = kmeans, K.max = 10, B = 100)
+# fviz_gap_stat(gap_stat)
+```
+
+#### K-Means
+```{r}
+blef_1_kmeans=kmeans(scaled.blef_1, 5,nstart=25)
+fviz_cluster(blef_1_kmeans, data = scaled.blef_1)
+# Note: Why PF6 outlier? Check... (PF17 also seems outlierish)
+```
+
+#### Hierchical Clustering
+```{r}
+### Hierarchical clustering
+blef_1_hclust1=hclust(dist.mat) #complete linkage
+blef_1_hclust2=hclust(dist.mat,method='average')
+blef_1_hclust3=hclust(dist.mat,method='single')
+blef_1_hclust4 = hclust(dist.mat, method = "ward.D2" )
+# Cut tree into 5 groups
+grp = cutree(blef_1_hclust4, k = 5)
+
+# Visualize
+# par(mfrow=c(2,2),pty='m') # Uncomment to see on one plot to compare
+plot(blef_1_hclust1, cex = 0.6) # plot tree complete linkage
+rect.hclust(blef_1_hclust1, k = 5, border = 2:6) # add rectangle
+
+plot(blef_1_hclust2, cex = 0.6) #average
+rect.hclust(blef_1_hclust2, k = 5, border = 2:6) 
+
+plot(blef_1_hclust3, cex = 0.6) #single
+rect.hclust(blef_1_hclust3, k = 5, border = 2:6) 
+
+plot(blef_1_hclust4, cex = 0.6) # Ward's method
+rect.hclust(blef_1_hclust4, k = 5, border = 2:6)
+```
+
+#### Stability of clusters
+```{r}
+# Bootstrap to see stability of clusters
+library(pvclust)
+blef_1_pvclust1 = pvclust(scaled.blef_1)
+blef_1_pvclust2 = pvclust(scaled.blef_1,
+                              method.hclust="complete") 
+# AU around 95% implies strongly supported by data
+plot(blef_1_pvclust1)
+pvrect(blef_1_pvclust1, alpha = 0.95)
+plot(blef_1_pvclust2)
+pvrect(blef_1_pvclust2, alpha = 0.95)
+```
+
+#### Most appropriate clustering method?
+```{r}
+# Choice of appropriate clustering algorithm (G Brock 2008)
+library(clValid)
+intern <- clValid(scaled.blef_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "internal")
+summary(intern)
+
+stab <- clValid(scaled.blef_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "stability")
+optimalScores(stab)
+summary(stab)
+plot(stab)
+```
+
+### PCA
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca <- prcomp(scaled.blef_1)
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+
+### PCA without weight and BMI (only biomarkers)
+res.pca <- prcomp(scaled.blef_1[,-1])
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+```
+***
+
+# EF $\to$ ER
+```{r}
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=1+((fast_wide[Timepoint=="ER",-c(1,2)]-fast_wide[Timepoint=="EF",-c(1,2)])/fast_wide[Timepoint=="EF",-c(1,2)])
+efer_change_data=select(efer_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT|Triglycerides|^HDL$"))
+rownames(efer_change_data)=fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+```
+
+## Version 1: Without Bilirubin (missing)
+```{r}
+## Version 1: Without Bilirubin
+efer_1 = efer_change_data[,-NAs_cols]
+```
+
+### Scaling
+```{r}
+### TRIAL : CLUSTERING
+
+scaled.efer_1= scale(efer_1)
+rownames(scaled.efer_1)=rownames(efer_change_data)
+efer_1_cor_mat=cor(scaled.efer_1)
+# View(blef_1_cor_mat) #Uncomment to get table view in R
+```
+
+### Dissimilarity Matrix
+```{r}
+dist.mat = get_dist(scaled.efer_1) # Euclidean default
+
+### Dissimilarity matrix
+fviz_dist(dist.mat, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+### Optimal number of clusters
+```{r}
+### Optimal number of clusters?
+fviz_nbclust(scaled.efer_1, kmeans, method = "wss") # 3 or 6?
+fviz_nbclust(scaled.efer_1, kmeans, method = "silhouette") # 6
+
+# Tibshirani, Walter, Hastie
+# gap_stat = clusGap(scaled.blef_1, FUN = kmeans, K.max = 10, B = 100)
+# fviz_gap_stat(gap_stat)
+```
+
+#### K-Means
+```{r}
+efer_1_kmeans=kmeans(scaled.efer_1, 6,nstart=25)
+fviz_cluster(efer_1_kmeans, data = scaled.efer_1) # Good bit of overlap
+# Note: Why PF6,PF10, PF14-15 outliers? Check...
+```
+
+#### Hierchical Clustering
+```{r}
+### Hierarchical clustering
+efer_1_hclust1=hclust(dist.mat) #complete linkage
+efer_1_hclust2=hclust(dist.mat,method='average')
+efer_1_hclust3=hclust(dist.mat,method='single')
+efer_1_hclust4 = hclust(dist.mat, method = "ward.D2" )
+# Cut tree into 4 groups
+grp = cutree(efer_1_hclust4, k = 6)
+
+# Visualize
+# par(mfrow=c(2,2),pty='m') # Uncomment to see on one plot to compare
+plot(efer_1_hclust1, cex = 0.6) # plot tree complete linkage
+rect.hclust(efer_1_hclust1, k = 6, border = 2:7) # add rectangle
+
+plot(efer_1_hclust2, cex = 0.6) #average
+rect.hclust(efer_1_hclust2, k = 6, border = 2:7) 
+
+plot(efer_1_hclust3, cex = 0.6) #single
+rect.hclust(efer_1_hclust3, k = 6, border = 2:7) 
+
+plot(efer_1_hclust4, cex = 0.6) # Ward's method
+rect.hclust(efer_1_hclust4, k = 6, border = 2:7)
+```
+
+#### Stability of clusters
+```{r}
+# Bootstrap to see stability of clusters
+library(pvclust)
+efer_1_pvclust1 = pvclust(scaled.efer_1)
+efer_1_pvclust2 = pvclust(scaled.efer_1,
+                              method.hclust="complete") 
+# AU around 95% implies strongly supported by data
+plot(efer_1_pvclust1)
+pvrect(efer_1_pvclust1, alpha = 0.95)
+plot(efer_1_pvclust2)
+pvrect(efer_1_pvclust2, alpha = 0.95)
+```
+
+#### Most appropriate clustering method?
+```{r}
+# Choice of appropriate clustering algorithm (G Brock 2008)
+library(clValid)
+intern <- clValid(scaled.efer_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "internal")
+summary(intern)
+plot(intern)
+
+stab <- clValid(scaled.efer_1, nClust = 2:11,
+                  clMethods = c("hierarchical","kmeans","pam"), 
+                  validation = "stability")
+optimalScores(stab)
+summary(stab)
+plot(stab)
+```
+
+### PCA
+```{r}
+### PCA to see how biomarkers are correlated
+res.pca <- prcomp(scaled.efer_1)
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+
+### PCA without weight and BMI (only biomarkers)
+res.pca <- prcomp(scaled.efer_1[,-1])
+# Visualize eigenvalues/variances
+fviz_screeplot(res.pca, addlabels = TRUE, ylim = c(0, 50))
+# Extract the results for variables
+var = get_pca_var(res.pca)
+# Contributions of variables to PC1
+fviz_contrib(res.pca, choice = "var", axes = 1, top = 25)
+# Contributions of variables to PC2
+fviz_contrib(res.pca, choice = "var", axes = 2, top = 25)
+# Control variable colors using their contributions to the principle axis
+fviz_pca_var(res.pca, col.var="contrib",gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping
+             ) + theme_minimal() + ggtitle("Variables - PCA")
+```
+
+```{r}
+# Using ID as groups
+# fast_wide_data=fast_wide[,-1]
+# fast_wide_participants = fast_wide[,"ID"]
+
+# segregate on timepoints
+
+detach(fast_wide)
+```

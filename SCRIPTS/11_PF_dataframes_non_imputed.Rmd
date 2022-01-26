@@ -1,0 +1,122 @@
+---
+title: "PF_DFs"
+author: 'Non-imputed'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+```{r global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+library(dplyr)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE)
+knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Working Directory & Datasets
+```{r, message=FALSE}
+setwd("./DATA")
+##AM please suppress trash outputs with chunk option: message=FALSE
+##AM sometimes you need this to suppress stubborn outputs
+#```{r results='hide', fig.keep='high'}
+
+df_fast_wide = read.csv("Blood_changes_across_timepoints_rows_wide_AM.csv")
+df_fast_frac_wide = read.csv("Blood_changes_across_timepoints_rows_fractions_AM.csv")
+
+# df_fast_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_AM.csv",header=T,sep=",")
+# df_fast_frac_wide = read.csv("../DATA/Blood_changes_across_timepoints_rows_wide_fractions_AM.csv",header=T,sep=",")
+
+# drop rows containing W1 timepoint - we will not use it
+# df_fast_wide <- subset(df_fast_wide, Timepoint != "W1")
+# df_fast_frac_wide <- subset(df_fast_frac_wide, Timepoint != "W1.f")
+
+# working with df_fast_wide data
+attach(df_fast_wide)
+df_fast_wide$ID = as.factor(ID)
+df_fast_wide$Timepoint=as.factor(Timepoint)
+```
+
+## Missing values?
+
+```{r}
+##AM add print() arguments to label each output
+(total_missing=sum(is.na(df_fast_wide)))
+(NAs_observations=which(rowMeans(is.na(df_fast_wide))!=0))
+rowMeans(is.na(df_fast_wide[NAs_observations,])) # out of 50 observations
+obs_totalnas=rowSums(is.na(df_fast_wide[NAs_observations,]))
+names(obs_totalnas)=df_fast_wide[NAs_observations,"Timepoint"];obs_totalnas
+# All NA-heavy ones W1 so no W1 analysis done.
+# 3 BL (1st, 21st and 37th), 1 ER (40th obs) missing
+
+plot(df_fast_wide$Timepoint,df_fast_wide$Triglycerides, xlab="Timepoint", ylab="Triglycerides")
+```
+
+# Datasets: BL, BL $\to$ EF, EF $\to$ ER
+
+```{r, include=FALSE}
+# Baseline data
+bl_data=df_fast_wide[Timepoint=="BL",]
+rownames(bl_data)=bl_data$ID
+bl_data=bl_data[,-c(1,2)]
+df_baseline_data=dplyr::select(bl_data,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT"))
+(NAs_cols=which(colMeans(is.na(df_baseline_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(df_baseline_data[,NAs_cols]))
+df_baseline_1=df_baseline_data[,-NAs_cols]
+rm(bl_data,df_baseline_data)
+
+# BL to EF fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+blef_change=df_fast_wide[Timepoint=="EF",-c(1,2)]/df_fast_wide[Timepoint=="BL",-c(1,2)]
+blef_change_data=dplyr::select(blef_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT"))
+rownames(blef_change_data)=df_fast_wide[rownames(blef_change_data),"ID"]
+# View(blef_change_data) #Uncomment to see table
+# hist(blef_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(blef_change_data))!=0)) # Bililrubin and UrineSG
+colSums(is.na(blef_change_data[,NAs_cols]))
+df_blef_1=blef_change_data[,-NAs_cols]
+rm(blef_change_data,blef_change)
+
+# EF to ER fractionalised-percentage changes 
+# (Note: think about logs for skews ???)
+efer_change=df_fast_wide[Timepoint=="ER",-c(1,2)]/df_fast_wide[Timepoint=="EF",-c(1,2)]
+efer_change_data=dplyr::select(efer_change,-matches("Weight|Waist|SBP|DBP|^Hb$|Ht|Neutr|Sodium|Potassium|Chloride|Calcium|ALT"))
+rownames(efer_change_data)=df_fast_wide[rownames(efer_change_data),"ID"]
+# View(efer_change_data) #Uncomment to see table
+# hist(efer_change_data[,"Weight"]) #Uncomment to see for skews/log-changes
+(NAs_cols=which(colMeans(is.na(efer_change_data))!=0)) # 1 ER - Bilirubin only
+df_efer_1 = efer_change_data[,-NAs_cols]
+rm(efer_change_data,efer_change)
+
+detach(df_fast_wide)
+```
+
+## Mean-Centering datasets
+```{r, include=FALSE}
+# Mean-centering: https://link.springer.com/article/10.3758/s13428-015-0624-x
+# Helps interecept interpretation, preserving slope and also helps a bit with multicollinearity
+centr.df_blef_1=as.data.frame(scale(df_blef_1,center=T,scale=F))
+centr.df_efer_1=as.data.frame(scale(df_efer_1,center=T,scale=F))
+centr.df_baseline_1=as.data.frame(scale(df_baseline_1, center=T, scale=F))
+```
+
+```{r}
+setwd("./SCRIPTS")
+save(df_fast_wide, df_blef_1, df_baseline_1, df_efer_1, 
+     centr.df_baseline_1, centr.df_blef_1, centr.df_blef_1, centr.df_efer_1,
+     file="RDA_Non_imputed_dfs_SJ.rda")
+print("End of code.")
+knitr::knit_exit()
+```
