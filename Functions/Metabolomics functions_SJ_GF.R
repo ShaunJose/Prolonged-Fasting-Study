@@ -89,3 +89,57 @@ func_volcano_plot <- function(correlation_table, biomarker, main_title = "Biomar
                   drawConnectors = TRUE,
                   widthConnectors = 0.75)
 }
+
+
+
+# To get accession numbers from UniProt website for pathway enrichment analysis
+# Inputs protein short forms (with or w/o dots) to return Accs_no.
+# If uniprot_target_name = T --> using Target column
+# Defaults to Target_dots column
+# eg. func_Accs_no_proteins("IL.10.Ra", UniprotDict (see under section Datasets)) --> "Q13651"
+# eg. func_Accs_no_proteins("IL-10 Ra", UniprotDict (see under section Datasets), uniprot_target_name = T) --> "Q13651"
+func_Accs_no_proteins <- function(protein_list, df_UniProt_IDs, uniprot_target_name=F){
+  prot_list<-func_prots_X_numeric(protein_list)
+  if (uniprot_target_name){
+    accs=na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target),]$UniProt)
+  } else {
+    accs<-na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target_dots),]$UniProt)
+  }
+  return(accs)
+}
+
+# Protein Accs No (UniprotID) to Protein Name (or DottedName)
+# Defaults to Actual Protein Name
+# eg. func_AccsToProtNames(Q13651, Uniprot Dict) --> "IL.10.Ra"
+# eg. func_AccsToProtNames(Q13651, Uniprot Dict, uniprot_target_name = T) --> "IL-10 Ra"
+func_AccsToProtNames <- function(accs_list, df_UniProt_IDs, uniprot_target_name=F){
+  if (uniprot_target_name){
+    prots=na.omit(df_UniProt_IDs[match(accs_list,df_UniProt_IDs$UniProt),]$Target)
+  } else {
+    prots<-na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$UniProt),]$Target_dots)
+  }
+  return(prots)
+}
+
+# Prot names (with special characters subbed in by ".") to Actual Protein Name 
+# (eg. LEAP.1 to LEAP-1, IL.10.Ra to IL-10 Ra)
+# Inputs: Vector of dottedNamed Proteins; Uniprot Dict (see below under section Datasets)
+func_NamesDotsToTargetNames <- function(protDots_list, df_UniProt_IDs){
+  prot_list<-func_prots_X_numeric(protDots_list)
+  prots=na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target_dots),]$Target)
+  return(prots)
+}
+
+
+# Removes X as prefix if 2nd character is numeric.
+func_prots_X_numeric <- function(protein_list){
+  for (i in 1:length(protein_list)){
+    list_chars<-unlist(strsplit(protein_list[i],""))
+    # Take proteins that start with X and followed by a number, removes X in front.
+    if (list_chars[1]=="X" & is.numeric(as.numeric(list_chars[2])) & 
+        !is.na(as.numeric(list_chars[2]))){
+      protein_list[i] <- paste(list_chars[-1],collapse = "")
+    }
+  }
+  return (protein_list)
+}
