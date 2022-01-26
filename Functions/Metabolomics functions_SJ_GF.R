@@ -143,3 +143,35 @@ func_prots_X_numeric <- function(protein_list){
   }
   return (protein_list)
 }
+
+
+# To select pathway analysis required (options: Pathway.Enr, BP, CC, MF)
+func_path_enr <- function(protein_Accs_list, type = "Path.Enr"){
+  if (type == "Path.Enr"){
+    res <- Pathway.Enr(protein_Accs_list)
+  } else if (type == "BP"){
+    res<-Enrichment.BP(protein_Accs_list)
+  } else if (type == "CC"){
+    res<-Enrichment.CC(protein_Accs_list)
+  } else if (type == "MF"){
+    res<-Enrichment.MF(protein_Accs_list)
+  }
+  return (res)
+}
+
+# Returns pvalue, pathway, common proteins belonging to pathway for Enrichment.obj
+func_extract_relevant_paths<- function(enr.obj){
+  data_enr.obj<-enr.obj$data
+  res<-data.frame(p_val = data_enr.obj$p_value,
+                  pathway = data_enr.obj$term_name,
+                  common_proteins = data_enr.obj$intersection)
+  return (res)
+}
+
+# To get count of common elements (ordered highest to lowest)
+# Although works well for pathways, can be used for other cases.
+func_count_common <- function(pathways){
+  count_table<-as.data.frame(table(pathways))
+  ordered_table<-count_table[order(count_table$Freq, decreasing=T),]
+  return (ordered_table)
+}
