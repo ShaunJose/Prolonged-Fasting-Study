@@ -130,7 +130,6 @@ func_NamesDotsToTargetNames <- function(protDots_list, df_UniProt_IDs){
   return(prots)
 }
 
-
 # Removes X as prefix if 2nd character is numeric.
 func_prots_X_numeric <- function(protein_list){
   for (i in 1:length(protein_list)){
@@ -174,4 +173,99 @@ func_count_common <- function(pathways){
   count_table<-as.data.frame(table(pathways))
   ordered_table<-count_table[order(count_table$Freq, decreasing=T),]
   return (ordered_table)
+}
+
+
+
+# Like func_count_common but specific to finding number of paths that each protein is involved in
+func_count_proteins_paths<- function(pathways_obj, uniprotDict_obj,uniprotTargetName = T){
+  comb_accs_list<-paste(pathways_obj$common_proteins, collapse=",") # combine all accs_nos across all pathways into one long character separated by ",".
+  vect_accs_list<-unlist(strsplit(comb_accs_list,",")) # separate to 1 AccsNo per vector entry.
+  freq_table <- func_count_common(vect_accs_list) # Count how many times a single protein appears
+  freq_table[,1]<-func_AccsToProtNames(freq_table$pathways,uniprotDict_obj, uniprot_target_name = uniprotTargetName) # to Actual Protein names (in Uniprot)
+  return (freq_table)
+}
+
+
+# To get into format ready for network plot: pathfindR::term_gene_graph()
+func_TableGraphNetwork_Omics <- function(named_cor_table_obj,pathways_obj, uniprotDict_obj, uniprotTargetName = T){
+  
+  
+  # Uncomment either the following chunk or the one below
+  # cor_positive_prots<-NULL
+  # cor_negative_prots<-NULL
+  # rownames(named_cor_table_obj)<-func_NamesDotsToTargetNames(rownames(named_cor_table_obj),uniprotDict_obj)
+  # for (i in 1:dim(named_cor_table_obj)[1]){
+  #   if (named_cor_table_obj$cor_pearsons[i] >=0){
+  #     cor_positive_prots<-cbind(cor_positive_prots,
+  #                               rownames(named_cor_table_obj)[i])
+  #     # element goes in "positive" list
+  #   } else {
+  #     cor_negative_prots<-cbind(cor_negative_prots,
+  #                               rownames(named_cor_table_obj)[i])
+  #     # element goes in "negative" list
+  #   }
+  # }
+  
+  # Uncomment either the following chunk or the one above
+  
+  # Separating strongly correlated proteins into 2 lists - positive and negative
+  cor_positive_prots<-NULL
+  cor_negative_prots<-NULL
+  # Transforming names to Actual Protein names.
+  rownames(named_cor_table_obj)<-func_NamesDotsToTargetNames(rownames(named_cor_table_obj),
+                                                             uniprotDict_obj)
+  # Segregating into positive and negative lists
+  for (element in rownames(named_cor_table_obj)){
+    index<-which(rownames(named_cor_table_obj) == element) # identify index corresponding to protein
+    if (named_cor_table_obj[index,] >= 0){
+      cor_positive_prots<-cbind(cor_positive_prots,element)
+      # element goes in "positive" list
+    } else {
+      cor_negative_prots<-cbind(cor_negative_prots,element)}
+    # element goes in "negative" list
+  }
+  
+  # Now we do not need the pearsons correlations anymore...
+  
+  # Create shallow copy which will be output
+  df_network_plot<-with(pathways_obj,
+                        data.frame(lowest_p = p_val,
+                                   Term_Description = pathway,
+                                   Up_regulated = character(length(p_val)), 
+                                   Down_regulated = character(length(p_val))))
+  
+  # Each row is a string of proteins belonging to a specific pathway. (hence no duplicates possible)
+  accs_pathways<-pathways_obj$common_proteins
+  for (i in 1:length(accs_pathways)){
+    expanded_accs_path_list<-unlist(strsplit(accs_pathways[i], ","))
+    prots_pathway<-func_AccsToProtNames(expanded_accs_path_list,
+                                        uniprotDict_obj,
+                                        uniprot_target_name = uniprotTargetName)
+    
+    # Separating positive proteins from negative ones for every pathway
+    pos_prots_pathway<-intersect(prots_pathway, cor_positive_prots)
+    df_network_plot$Up_regulated[i]<-paste(pos_prots_pathway, collapse = ", ")
+    
+    neg_prots_pathway<-intersect(prots_pathway, cor_negative_prots)
+    df_network_plot$Down_regulated[i]<-paste(neg_prots_pathway, collapse = ", ")
+    
+    if ((length(neg_prots_pathway) + length(pos_prots_pathway))!=length(prots_pathway)){
+      stop("Some proteins in pathway not accounted for.")
+    }
+  }
+  return (df_network_plot)
+}
+
+# Gene_Graph_Plot for Protein Network and Identifying Hubs
+# Filename: .jpg
+func_NetworkPlot_GeneGraph_Omics <- function(TableGraphNetwork_obj, filename,
+                                             Res = 200, Width = 4000, Height = 2000,
+                                             numTerms = nrow(TableGraphNetwork_obj)){
+  jpeg(filename,width=Width,height=Height,res=Res)
+  pathfindR::term_gene_graph(TableGraphNetwork_obj,
+                             num_terms = numTerms,
+                             layout = "stress",
+                             use_description = TRUE,
+                             node_size = "num_genes")
 }
