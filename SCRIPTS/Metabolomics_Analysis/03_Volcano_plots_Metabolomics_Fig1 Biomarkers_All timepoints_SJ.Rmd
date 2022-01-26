@@ -1,6 +1,6 @@
 ---
 title: "PF_Metabolomics_Figure 1 Biomarkers correlation"
-author: 'Volcano plots - Only BL, EF, ER timepoints'
+author: 'Volcano plots - All timepoints'
 date: "SJ"
 output:
   html_document:
@@ -27,9 +27,7 @@ library(kableExtra)
 ```
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
-                      fig.align = 'center',fig.width = 6, fig.asp = 0.8, 
-                      out.width = "80%")
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE, fig.align = 'center', fig.width = 6, fig.asp = 0.8, out.width = "80%")
 #knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
 knitr::opts_knit$set(root.dir = "../..") #PFS directory
 theme_update(plot.title = element_text(hjust = 0.5)) # center plots
@@ -37,14 +35,12 @@ theme_update(plot.title = element_text(hjust = 0.5)) # center plots
 
 
 # Useful functions
-
 ```{r, message=FALSE}
 source("./Functions/Metabolomics functions_SJ_GF.R")
 source("./Functions/Correlation_functions.R")
 ```
 
 # Working directory and datasets
-
 ```{r}
 load("./SCRIPTS/RDA_Non_imputed_dfs_SJ.rda")
 df_metabolomics=read.csv("./DATA/PF_Metabolomics_SJedit_added_10_unknowns.csv",header=T)
@@ -64,6 +60,7 @@ df_metabolomics<-df_metabolomics[,-1]
 
 # Normalise each row (in case of skews)
 df_metabolomics<-data.frame(t(apply(df_metabolomics,1,BoxCoxTransf)))
+
 
 # Biomarkers
 ### !! Only run following code altogether
@@ -92,23 +89,20 @@ df_main<-data.frame(t(apply(df_main,1,BoxCoxTransf)))
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Beta.hydroxy.butyrate)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "BHB"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_bhb<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_bhb_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "BHB", main_title="BHB Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "BHB", main_title="BHB Volcano Plot \n All timepoints")
 ```
 
 ### Cortisol
@@ -116,23 +110,20 @@ func_volcano_plot(corr_table, biomarker = "BHB", main_title="BHB Volcano Plot")
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Cortisol)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Cortisol"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_cort<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_cort_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "Cortisol", main_title="Cortisol Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "Cortisol", main_title="Cortisol Volcano Plot \n All timepoints")
 ```
 
 ### IGF.1
@@ -140,23 +131,20 @@ func_volcano_plot(corr_table, biomarker = "Cortisol", main_title="Cortisol Volca
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, IGF.1)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "IGF.1"
-
-# Only BL, EF, ER timepoints
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_igf1<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_igf1_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "IGF.1", main_title="IGF.1 Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "IGF.1", main_title="IGF.1 Volcano Plot \n All timepoints")
 ```
 
 ### FreeT3
@@ -164,23 +152,20 @@ func_volcano_plot(corr_table, biomarker = "IGF.1", main_title="IGF.1 Volcano Plo
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, FreeT3)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "FreeT3"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_t3<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_t3_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "FreeT3", main_title="FreeT3 Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "FreeT3", main_title="FreeT3 Volcano Plot \n All timepoints")
 ```
 
 ## Panel B
@@ -190,23 +175,20 @@ func_volcano_plot(corr_table, biomarker = "FreeT3", main_title="FreeT3 Volcano P
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Glucose)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Glucose"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_gluc<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_gluc_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "Glucose", main_title="Glucose Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "Glucose", main_title="Glucose Volcano Plot \n All timepoints")
 ```
 
 ### Insulin
@@ -214,23 +196,20 @@ func_volcano_plot(corr_table, biomarker = "Glucose", main_title="Glucose Volcano
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Insulin)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Insulin"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_ins<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_ins_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "Insulin", main_title="Insulin Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "Insulin", main_title="Insulin Volcano Plot \n All timepoints")
 ```
 
 ### Non_HDL_Chol
@@ -238,23 +217,20 @@ func_volcano_plot(corr_table, biomarker = "Insulin", main_title="Insulin Volcano
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Non_HDL_Chol)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Non_HDL_Chol"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_nonhdlchol<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_nonhdlchol_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "Non_HDL_Chol", main_title="Non_HDL_Chol Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "Non_HDL_Chol", main_title="Non_HDL_Chol Volcano Plot \n All timepoints")
 ```
 
 ### Triglycerides
@@ -262,31 +238,28 @@ func_volcano_plot(corr_table, biomarker = "Non_HDL_Chol", main_title="Non_HDL_Ch
 ```{r}
 df_merged<-func_merge_metabolomics_biomarker(df_metabolomics,df_main, Triglycerides)
 rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Triglycerides"
-
-# Only BL, EF, ER timepoints (no missing values present)
-df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
 ```
 
 #### Correlation results table
 
 ```{r}
-corr_table = func_corr_results_table(df_blefer)
+corr_table = func_corr_results_table(df_merged)
 corr_table[abs(corr_table$cor_pearsons)>=0.5,] %>% func_Kable()
-corr_tg<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
+corr_tg_all<-rownames(corr_table[abs(corr_table$cor_pearsons)>=0.5,])
 ```
 
 #### Volcano Plot
 
 ```{r}
-func_volcano_plot(corr_table, biomarker = "Triglycerides", main_title="Triglycerides Volcano Plot")
+func_volcano_plot(corr_table, biomarker = "Triglycerides", main_title="Triglycerides Volcano Plot \n All timepoints")
 ```
 
 # Save Significant Correlated Metabolites in RDA
 
 ```{r}
-# Saved in Giovanni folder since we are dealing with metabolomics
-setwd("./SCRIPTS/Giovanni")
-save(corr_bhb,corr_cort,corr_igf1, corr_t3,
-     corr_gluc,corr_ins,corr_nonhdlchol,corr_tg,
-     file="RDA_BLEFER_Correlation_Metabolites_Biomarkers.rda")
+# Saved in Metabolomics_Analysis folder since we are dealing with metabolomics
+setwd("./SCRIPTS/Metabolomics_Analysis")
+save(corr_bhb_all,corr_cort_all,corr_igf1_all, corr_t3_all,
+     corr_gluc_all,corr_ins_all,corr_nonhdlchol_all,corr_tg_all,
+     file="RDA_All_timepts_Correlation_Metabolites_Biomarkers.rda")
 ```

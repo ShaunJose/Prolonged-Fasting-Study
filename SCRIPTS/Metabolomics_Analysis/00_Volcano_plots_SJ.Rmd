@@ -1,5 +1,5 @@
 ---
-title: "PF_Giovanni preliminary analyses"
+title: "PF_Volcano Plots"
 author: 'Volcano plots'
 date: "SJ"
 output:
@@ -58,7 +58,7 @@ Timept_ID=df_main$Timept_ID
 group=df_fast_wide$Timepoint
 names(group)=Timept_ID
 
-# Transposed for Giovanni functions
+# Transposed for Metabolomics functions
 df_main<- data.frame(t(df_main[,-1]))
 colnames(df_main) <- Timept_ID
 

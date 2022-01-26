@@ -1,5 +1,5 @@
 ---
-title: "PF_Giovanni preliminary analyses"
+title: "PF"
 author: 'Volcano plots - Metabolomics'
 date: "SJ"
 output:
@@ -180,7 +180,7 @@ fc_efer = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)>=1) &
 fc_bler = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)>=1) & 
                                        (abs(results_BL_ER$FDR)<=0.05),])
 
-setwd("./SCRIPTS/Giovanni/VennDiagrams")
+setwd("./SCRIPTS/Metabolomics_Analysis/VennDiagrams")
 venn.diagram(main='Delta changes Metabolites_FC and FDR',
   x = list(fc_blw1,fc_blef, fc_efer, fc_bler),
   category.names = c("BLW1","BLEF" , "EFER " , "BLER"),
@@ -203,7 +203,7 @@ efer_sig_fc_pval = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)>=1) &
 bler_sig_fc_pval = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)>=1) & 
                                        (abs(results_BL_ER$FDR)>0.05),])
 
-setwd("./SCRIPTS/Giovanni/VennDiagrams")
+setwd("./SCRIPTS/Metabolomics_Analysis/VennDiagrams")
 venn.diagram(main='Delta changes Metabolites_OnlyFC',
   x = list(blef_sig_fc_pval, efer_sig_fc_pval, bler_sig_fc_pval),
   category.names = c("BLEF" , "EFER " , "BLER"),
@@ -225,7 +225,7 @@ efer_sig_fc_pval = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)<1) &
 bler_sig_fc_pval = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)<1) & 
                                        (abs(results_BL_ER$FDR)<=0.05),])
 
-setwd("./SCRIPTS/Giovanni/VennDiagrams")
+setwd("./SCRIPTS/Metabolomics_Analysis/VennDiagrams")
 venn.diagram(main='Delta changes Metabolites_OnlyFDR',
   x = list(blef_sig_fc_pval, efer_sig_fc_pval, bler_sig_fc_pval),
   category.names = c("BLEF" , "EFER " , "BLER"),
@@ -239,8 +239,8 @@ intersect(blef_sig_fc_pval, efer_sig_fc_pval)
 # Save Significant Metabolites in RDA
 
 ```{r}
-# Saved in Giovanni folder since we are dealing with metabolomics
-setwd("./SCRIPTS/Giovanni")
+# Saved in Metabolomics_Analysis folder since we are dealing with metabolomics
+setwd("./SCRIPTS/Metabolomics_Analysis")
 save(fc_blw1, fc_blef,fc_efer,fc_bler,
      blef_blw1_intrsct, blef_efer_intrsct,
      file="RDA_Metabolites_FC.rda")

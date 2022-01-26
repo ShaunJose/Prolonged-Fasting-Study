@@ -39,7 +39,7 @@ knitr::opts_knit$set(root.dir = "..") # SCRIPTS folder
 # Load RDA files
 
 ```{r}
-setwd("./Giovanni")
+setwd("./Metabolomics_Analysis")
 load("RDA_Metabolites_FC.rda") # Fold changes in metabolites
 # load("RDA_BLEFER_Correlation_Metabolites_Biomarkers.rda") # Correlation with timepoints - only BL, EF, ER. 
 
@@ -54,7 +54,7 @@ load("RDA_All_timepts_Correlation_Metabolites_Biomarkers.rda") #Same correlation
 # Useful functions used for computing table results
 
 ```{r, message=FALSE}
-# source("./Giovanni/Metabolomics functions_SJ_GF.R")
+# source("./Metabolomics_Analysis/Metabolomics functions_SJ_GF.R")
 # source("Correlation_functions.R")
 ```
 
@@ -194,7 +194,7 @@ df_corr_comb_unique <- df_corr_comb_unique %>%
         blef_efer_intrsct ~ "blef_efer_int"))
 
 # Add PCA from csv (created manually)
-pca_dim1_list <- read.csv("Giovanni/PFS_significant_metabolites_PCA_Dim1_only_AM.csv",header=T,sep=",")
+pca_dim1_list <- read.csv("Metabolomics_Analysis/PFS_significant_metabolites_PCA_Dim1_only_AM.csv",header=T,sep=",")
 # Convert to a vector
 pca_dim1_list <- pca_dim1_list[,1]
 
@@ -206,7 +206,7 @@ df_corr_comb_unique <- df_corr_comb_unique %>%
         pca_dim1_list ~ "PCA_int"))
 
 # Save to csv
-write.csv(df_corr_comb_unique, file="Giovanni/PFS_significant_metabolites_AM.csv",
+write.csv(df_corr_comb_unique, file="Metabolomics_Analysis/PFS_significant_metabolites_AM.csv",
           row.names = FALSE, na = "")
 
 
