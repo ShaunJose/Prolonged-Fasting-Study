@@ -1,0 +1,235 @@
+---
+title: "PF_Giovanni preliminary analyses"
+author: 'Volcano plots'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.width = 6, fig.asp = 0.8, out.width = "80%")
+knitr::opts_knit$set(root.dir = "..") # SCRIPTS folder
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+
+# Functions used
+```{r, message=FALSE}
+source("../Functions/Metabolomics functions_SJ_GF.R")
+# rm(metabolites,results_CR_EX,results_CR_WD,results_EX_WD,group)
+```
+
+# Working directory and datasets
+```{r}
+load("RDA_Non_imputed_dfs_SJ.rda")
+```
+
+# Format dataset structure
+
+```{r}
+#df_fast_wide$ID=gsub("PF","",df_fast_wide$ID)
+
+### !! Only run following code altogether
+df_main = data.frame(Timept_ID=paste(df_fast_wide$Timepoint,df_fast_wide$ID,sep = "_"),
+                     df_fast_wide[,-c(1,2)])
+
+# Get named group factor
+Timept_ID=df_main$Timept_ID
+group=df_fast_wide$Timepoint
+names(group)=Timept_ID
+
+# Transposed for Giovanni functions
+df_main<- data.frame(t(df_main[,-1]))
+colnames(df_main) <- Timept_ID
+
+(NAs_cols=which(colMeans(is.na(df_main))!=0)) # Bililrubin, UrineSG, U_ketones, U_pH removed
+colSums(is.na(df_main[,NAs_cols]))
+df_main=df_main[-c(22,33,55,57),]
+```
+
+# Differential Expression results
+
+```{r}
+### run analyses
+results_BL_EF = create_results_table(df=df_main,group1="EF",group2="BL") # BL vs EF
+results_EF_ER = create_results_table(df=df_main,group1="ER",group2="EF") # EF vs ER
+results_BL_ER = create_results_table(df=df_main,group1="ER",group2="BL") # BL vs ER
+```
+
+# Volcano Plots
+
+## BL to EF
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_BL_EF, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLEF Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_BL_EF)[which(abs(results_BL_EF$log2FC)>=0.5 | results_BL_EF$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Unadjusted - Figure 1 biomarkers
+EnhancedVolcano(results_BL_EF, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLEF Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+
+# Adjusted
+EnhancedVolcano(results_BL_EF, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLEF Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_BL_EF)[which(abs(results_BL_EF$log2FC)>=0.5 | results_BL_EF$pval<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted - Figure 1 selected biomarkers
+EnhancedVolcano(results_BL_EF, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLEF Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+```
+
+## EF to ER
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_EF_ER, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="EFER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_EF_ER)[which(abs(results_EF_ER$log2FC)>=0.5 | results_EF_ER$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Unadjusted - Figure 1 biomarkers
+EnhancedVolcano(results_EF_ER, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="EFER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+
+# Adjusted
+EnhancedVolcano(results_EF_ER, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="EFER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_EF_ER)[which(abs(results_EF_ER$log2FC)>=0.5 | results_EF_ER$pval<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted - Figure 1 selected biomarkers
+EnhancedVolcano(results_EF_ER, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="EFER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+```
+
+## BL to ER
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_BL_ER, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_BL_ER)[which(abs(results_BL_ER$log2FC)>=0.5 | results_BL_ER$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Unadjusted - Figure 1 biomarkers
+EnhancedVolcano(results_BL_ER, pCutoff = 1e-03,FCcutoff = 0.5,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+
+# Adjusted
+EnhancedVolcano(results_BL_ER, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_BL_ER)[which(abs(results_BL_ER$log2FC)>=0.5 | results_BL_ER$pval<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted - Figure 1 selected biomarkers
+EnhancedVolcano(results_BL_ER, pCutoff = 0.05,FCcutoff = 0.5,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = c("Glucose","Insulin","Beta.hydroxy.butyrate",
+                              "IGF.1","Cortisol","FreeT3", "Triglycerides",
+                              "Non_HDL_Chol"),
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75, caption = "Figure 1 selected variables")
+```
