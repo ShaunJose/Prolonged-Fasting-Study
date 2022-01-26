@@ -1,0 +1,233 @@
+---
+title: "PF_Proteomics Pathways Network Plots"
+author: 'Uniprot, Annotated Proteins'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls()) ##AM reset workspace - good practice to run clean
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(VennDiagram)
+library(readxl) # Input file is xlsx (not csv)
+library(UniprotR)
+# library(pathfindR)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..")
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions for getting list results
+```{r, message=FALSE}
+
+source("./Functions/Metabolomics functions_SJ_GF.R")
+source("./Functions/Correlation_functions.R")
+
+# The functions below are newly added to 'Metabolomics functions_SJ_GF.R':
+
+# To get accession numbers from UniProt website for pathway enrichment analysis
+# Inputs protein short forms (with or w/o dots) to return Accs_no.
+# If uniprot_target_name = T --> using Target column
+# Defaults to Target_dots column
+# eg. func_Accs_no_proteins("IL.10.Ra", UniprotDict (see under section Datasets)) --> "Q13651"
+# eg. func_Accs_no_proteins("IL-10 Ra", UniprotDict (see under section Datasets), uniprot_target_name = T) --> "Q13651"
+func_Accs_no_proteins <- function(protein_list, df_UniProt_IDs, uniprot_target_name=F){
+  prot_list<-func_prots_X_numeric(protein_list)
+  if (uniprot_target_name){
+    accs=na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target),]$UniProt)
+  } else {
+    accs<-na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target_dots),]$UniProt)
+  }
+  return(accs)
+}
+
+# Protein Accs No (UniprotID) to Protein Name (or DottedName)
+# Defaults to Actual Protein Name
+# eg. func_AccsToProtNames(Q13651, Uniprot Dict) --> "IL.10.Ra"
+# eg. func_AccsToProtNames(Q13651, Uniprot Dict, uniprot_target_name = T) --> "IL-10 Ra"
+func_AccsToProtNames <- function(accs_list, df_UniProt_IDs, uniprot_target_name=F){
+  if (uniprot_target_name){
+    prots=na.omit(df_UniProt_IDs[match(accs_list,df_UniProt_IDs$UniProt),]$Target)
+  } else {
+    prots<-na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$UniProt),]$Target_dots)
+  }
+  return(prots)
+}
+
+# Prot names (with special characters subbed in by ".") to Actual Protein Name 
+# (eg. LEAP.1 to LEAP-1, IL.10.Ra to IL-10 Ra)
+# Inputs: Vector of dottedNamed Proteins; Uniprot Dict (see below under section Datasets)
+func_NamesDotsToTargetNames <- function(protDots_list, df_UniProt_IDs){
+  prot_list<-func_prots_X_numeric(protDots_list)
+  prots=na.omit(df_UniProt_IDs[match(prot_list,df_UniProt_IDs$Target_dots),]$Target)
+  return(prots)
+}
+
+# Removes X as prefix if 2nd character is numeric.
+func_prots_X_numeric <- function(protein_list){
+  for (i in 1:length(protein_list)){
+  list_chars<-unlist(strsplit(protein_list[i],""))
+  # Take proteins that start with X and followed by a number, removes X in front.
+  if (list_chars[1]=="X" & is.numeric(as.numeric(list_chars[2])) & 
+      !is.na(as.numeric(list_chars[2]))){
+    protein_list[i] <- paste(list_chars[-1],collapse = "")
+    }
+  }
+  return (protein_list)
+}
+
+# To get into format ready for network plot: pathfindR::term_gene_graph()
+func_TableGraphNetwork_Omics <- function(named_cor_table_obj,pathways_obj, uniprotDict_obj, uniprotTargetName = T){
+  
+
+  # Uncomment either the following chunk or the one below
+  # cor_positive_prots<-NULL
+  # cor_negative_prots<-NULL
+  # rownames(named_cor_table_obj)<-func_NamesDotsToTargetNames(rownames(named_cor_table_obj),uniprotDict_obj)
+  # for (i in 1:dim(named_cor_table_obj)[1]){
+  #   if (named_cor_table_obj$cor_pearsons[i] >=0){
+  #     cor_positive_prots<-cbind(cor_positive_prots,
+  #                               rownames(named_cor_table_obj)[i])
+  #     # element goes in "positive" list
+  #   } else {
+  #     cor_negative_prots<-cbind(cor_negative_prots,
+  #                               rownames(named_cor_table_obj)[i])
+  #     # element goes in "negative" list
+  #   }
+  # }
+  
+  # Uncomment either the following chunk or the one above
+  
+  # Separating strongly correlated proteins into 2 lists - positive and negative
+  cor_positive_prots<-NULL
+  cor_negative_prots<-NULL
+  # Transforming names to Actual Protein names.
+  rownames(named_cor_table_obj)<-func_NamesDotsToTargetNames(rownames(named_cor_table_obj),
+                                                             uniprotDict_obj)
+  # Segregating into positive and negative lists
+  for (element in rownames(named_cor_table_obj)){
+    index<-which(rownames(named_cor_table_obj) == element) # identify index corresponding to protein
+      if (named_cor_table_obj[index,] >= 0){
+        cor_positive_prots<-cbind(cor_positive_prots,element)
+        # element goes in "positive" list
+      } else {
+        cor_negative_prots<-cbind(cor_negative_prots,element)}
+        # element goes in "negative" list
+  }
+  
+  # Now we do not need the pearsons correlations anymore...
+  
+  # Create shallow copy which will be output
+  df_network_plot<-with(pathways_obj,
+                        data.frame(lowest_p = p_val,
+                                   Term_Description = pathway,
+                                   Up_regulated = character(length(p_val)), 
+                                   Down_regulated = character(length(p_val))))
+  
+  # Each row is a string of proteins belonging to a specific pathway. (hence no duplicates possible)
+  accs_pathways<-pathways_obj$common_proteins
+  for (i in 1:length(accs_pathways)){
+    expanded_accs_path_list<-unlist(strsplit(accs_pathways[i], ","))
+    prots_pathway<-func_AccsToProtNames(expanded_accs_path_list,
+                                        uniprotDict_obj,
+                                        uniprot_target_name = uniprotTargetName)
+    
+    # Separating positive proteins from negative ones for every pathway
+    pos_prots_pathway<-intersect(prots_pathway, cor_positive_prots)
+    df_network_plot$Up_regulated[i]<-paste(pos_prots_pathway, collapse = ", ")
+    
+    neg_prots_pathway<-intersect(prots_pathway, cor_negative_prots)
+    df_network_plot$Down_regulated[i]<-paste(neg_prots_pathway, collapse = ", ")
+    
+    if ((length(neg_prots_pathway) + length(pos_prots_pathway))!=length(prots_pathway)){
+      stop("Some proteins in pathway not accounted for.")
+    }
+  }
+  return (df_network_plot)
+}
+
+
+func_count_proteins_paths<- function(pathways_obj, uniprotDict_obj,uniprotTargetName = T){
+  comb_accs_list<-paste(pathways_obj$common_proteins, collapse=",") # combine all accs_nos across all pathways into one long character separated by ",".
+  vect_accs_list<-unlist(strsplit(comb_accs_list,",")) # separate to 1 AccsNo per vector entry.
+  freq_table <- func_count_common(vect_accs_list) # Count how many times a single protein appears
+  freq_table[,1]<-func_AccsToProtNames(freq_table$pathways,uniprotDict_obj, uniprot_target_name = uniprotTargetName) # to Actual Protein names (in Uniprot)
+  return (freq_table)
+}
+
+# Gene_Graph_Plot for Protein Network and Identifying Hubs
+func_NetworkPlot_GeneGraph_Omics <- function(TableGraphNetwork_obj, filename,
+                                       Res = 200, Width = 4000, Height = 2000,
+                                       numTerms = nrow(TableGraphNetwork_obj)){
+  jpeg(filename,width=Width,height=Height,res=Res)
+  pathfindR::term_gene_graph(TableGraphNetwork_obj,
+                             num_terms = numTerms,
+                             layout = "stress",
+                             use_description = TRUE,
+                             node_size = "num_genes")
+}
+
+```
+
+# Datasets
+
+```{r}
+setwd("./DATA/PROLONGED FASTING/GTAC_somascan/PF_Somalogic_18-045")
+df_proteomics=data.frame(read_excel("Cleaned_Proteomics data_AM.xlsx",sheet = "Sheet2_SJedit"))
+
+# Sheet that has Protein name with Xs and dots..
+# NOTE: before importing, convert all ",", "+", ":", " ", "-", other punctuation marks to "." in Target_dots column (C). This is important so as to not lead to NAs when merging.
+# NOTE: X before numeric value in name taken care of through func_prots_X_numeric
+df_uniprotIDs=data.frame(read_excel("Cleaned_Proteomics data_AM.xlsx",sheet = "Uniprot_dict"))
+```
+
+# Loaded Pathway and Correlation Tables
+
+```{r}
+setwd("./SCRIPTS/Proteomics Analysis")
+
+load("RDA_pathways_proteomics.rda")
+list2env(pathways, .GlobalEnv)
+
+load("RDA_All_timepts_Corr_tables_Proteins_Biomarkers.rda") # With info on pearsons correlation
+list2env(cor_tables, .GlobalEnv)
+```
+
+# BHB
+
+## Path.enr files
+
+```{r}
+pathways.enr <-mget(ls(pattern = "corr_path.enr$"))
+
+bhb_path.enr<-func_TableGraphNetwork_Omics(corr_bhb_all_pearsons,pathways.enr$paths_bhb_corr_path.enr, df_uniprotIDs)
+
+gluc_path.enr<-func_TableGraphNetwork_Omics(corr_gluc_all_pearsons,pathways.enr$paths_gluc_corr_path.enr, df_uniprotIDs)
+
+
+setwd("./SCRIPTS/Proteomics Analysis/Protein Pathway Network Plots")
+func_NetworkPlot_GeneGraph_Omics(bhb_path.enr,"BHB_PathEnr.jpg")
+func_NetworkPlot_GeneGraph_Omics(gluc_path.enr,"Gluc_PathEnr.jpg")
+dev.off() # Required to get all plots
+```

@@ -1,0 +1,280 @@
+---
+title: "PF_Proteomics data"
+author: 'Volcano plots'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(VennDiagram)
+library(readxl) # Input file is xlsx (not csv)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.width = 6, fig.asp = 0.8, out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..") #PFS directory
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions
+```{r, message=FALSE}
+source("./Functions/Metabolomics functions_SJ_GF.R")
+```
+
+# Working directory and datasets
+```{r}
+setwd("./DATA/PROLONGED FASTING/GTAC_somascan/PF_Somalogic_18-045")
+df_proteomics=read_excel("Cleaned_Proteomics data_AM.xlsx",sheet = "Sheet2_SJedit")
+```
+
+```{r}
+setwd("./DATA/PROLONGED FASTING/GTAC_somascan/PF_GTAC_analyzed045_updated_differential_expression")
+diff_exp<-read.table("Differential_Expression_table_WUS-18-045_all6contrasts.txt")
+```
+
+# Format dataset structure
+
+```{r}
+# Clean proteomics data
+### !! Only run following code altogether
+df_proteomics = data.frame(Timept_ID=paste(df_proteomics$ID,
+                                           df_proteomics$Timepoint,sep = "."),
+                           df_proteomics[,-c(1:5)])
+
+# Transposed for convenient merging on Timepoint+ID (not used here)
+Timept_ID=df_proteomics$Timept_ID
+df_proteomics<- data.frame(t(df_proteomics[,-1]))
+colnames(df_proteomics) <- Timept_ID
+
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_proteomics)))
+names(group)<-colnames(df_proteomics)
+```
+
+# Differential Expression results
+
+```{r}
+### run analyses
+results_BL_W1 = create_results_table(df=df_proteomics,group1="W1",group2="BL") # BL vs W1
+results_BL_EF = create_results_table(df=df_proteomics,group1="EF",group2="BL") # BL vs EF
+results_EF_ER = create_results_table(df=df_proteomics,group1="ER",group2="EF") # EF vs ER
+results_BL_ER = create_results_table(df=df_proteomics,group1="ER",group2="BL") # BL vs ER
+
+## Uncomment to see differences with analysed output provided by Valeria and co.
+# View(diff_exp)
+```
+
+# Volcano Plots
+
+## BL to W1
+
+```{r}
+# Adjusted
+EnhancedVolcano(results_BL_W1, pCutoff = 0.1,FCcutoff = 1,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLEF Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_BL_W1)[which(abs(results_BL_W1$log2FC)>=1 | results_BL_W1$FDR<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+```
+
+## BL to EF
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_BL_EF, pCutoff = 1e-03,FCcutoff = 1,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLEF Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_BL_EF)[which(abs(results_BL_EF$log2FC)>=1 | results_BL_EF$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted
+EnhancedVolcano(results_BL_EF, pCutoff = 0.1,FCcutoff = 1,
+                lab = rownames(results_BL_EF), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLEF Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_BL_EF)[which(abs(results_BL_EF$log2FC)>=1 | results_BL_EF$FDR<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+```
+
+## EF to ER
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_EF_ER, pCutoff = 1e-03,FCcutoff = 1,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="EFER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_EF_ER)[which(abs(results_EF_ER$log2FC)>=1 | results_EF_ER$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted
+EnhancedVolcano(results_EF_ER, pCutoff = 0.1,FCcutoff = 1,
+                lab = rownames(results_EF_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="EFER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_EF_ER)[which(abs(results_EF_ER$log2FC)>=1 | results_EF_ER$FDR<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+```
+
+## BL to ER
+
+```{r}
+# Unadjusted
+EnhancedVolcano(results_BL_ER, pCutoff = 1e-03,FCcutoff = 1,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'pval', title="BLER Volcano Plot",
+                subtitle="Using unadjusted p-values",
+                selectLab = rownames(results_BL_ER)[which(abs(results_BL_ER$log2FC)>=1 | results_BL_ER$pval<=1e-03)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+
+# Adjusted
+EnhancedVolcano(results_BL_ER, pCutoff = 0.1,FCcutoff = 1,
+                lab = rownames(results_BL_ER), labSize = 2,
+                x = 'log2FC', y = 'FDR', title="BLER Volcano Plot",
+                subtitle="Using FDR (adjusted) p-values",
+                selectLab = rownames(results_BL_ER)[which(abs(results_BL_ER$log2FC)>=1 | results_BL_ER$FDR<=0.05)],
+                legendPosition = 'right',legendLabSize = 9,legendIconSize = 3,
+                boxedLabels = TRUE, labFace='bold',
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+```
+
+# Venn Diagrams
+
+## Significant FDR p-val (all FC)
+
+```{r}
+# Both conditions - FDR (regardless of FC)
+fc_blw1 = rownames(results_BL_W1[results_BL_W1$FDR<=0.05,])
+fc_blef = rownames(results_BL_EF[(results_BL_EF$FDR<=0.05),])
+fc_efer = rownames(results_BL_EF[(results_EF_ER$FDR<=0.05),])
+fc_bler = rownames(results_BL_ER[(results_BL_ER$FDR<=0.05),])
+
+setwd("./SCRIPTS/Proteomics Analysis/VennDiagrams")
+venn.diagram(main='Delta changes Proteins_FDR (all FC)',
+  x = list(fc_blw1,fc_blef,fc_efer,fc_bler),
+  category.names = c("BLW1","BLEF" , "EFER " , "BLER"),
+  filename = 'VennD_Delta changes Proteins_pval_allFC.png',
+  output=TRUE
+)
+
+blef_blw1_intrsct<-intersect(fc_blw1,fc_blef)
+blef_efer_intrsct<-intersect(fc_efer,fc_blef)
+```
+
+## Significant Fold-change and FDR p-val
+
+```{r}
+# Both conditions - FC and pval
+blef_sig_fc_pval = rownames(results_BL_EF[(abs(results_BL_EF$log2FC)>=1) & 
+                                       (abs(results_BL_EF$FDR)<=0.1),])
+efer_sig_fc_pval = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)>=1) & 
+                                       (abs(results_EF_ER$FDR)<=0.1),])
+bler_sig_fc_pval = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)>=1) & 
+                                       (abs(results_BL_ER$FDR)<=0.1),])
+
+setwd("./SCRIPTS/Proteomics Analysis/VennDiagrams")
+venn.diagram(main='Delta changes Proteins_FC and FDR',
+  x = list(blef_sig_fc_pval, efer_sig_fc_pval, bler_sig_fc_pval),
+  category.names = c("BLEF" , "EFER " , "BLER"),
+  filename = 'VennD_Delta changes Proteins.png',
+  output=TRUE
+)
+
+intersect(blef_sig_fc_pval, efer_sig_fc_pval)
+```
+
+## Significant Fold-change (only)
+
+```{r}
+# Only condition - FC
+blef_sig_fc_pval = rownames(results_BL_EF[(abs(results_BL_EF$log2FC)>=1) & 
+                                       (abs(results_BL_EF$FDR)>0.1),])
+efer_sig_fc_pval = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)>=1) & 
+                                       (abs(results_EF_ER$FDR)>0.1),])
+bler_sig_fc_pval = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)>=1) & 
+                                       (abs(results_BL_ER$FDR)>0.1),])
+
+setwd("./SCRIPTS/Proteomics Analysis/VennDiagrams")
+venn.diagram(main='Delta changes Proteins_OnlyFC',
+  x = list(blef_sig_fc_pval, efer_sig_fc_pval, bler_sig_fc_pval),
+  category.names = c("BLEF" , "EFER " , "BLER"),
+  filename = 'VennD_Delta changes Proteins_OnlyFC.png',
+  output=TRUE
+)
+
+intersect(blef_sig_fc_pval, efer_sig_fc_pval)
+```
+
+## Significant FDR p-val (only)
+
+```{r}
+# Only condition - FDR
+blef_sig_fc_pval = rownames(results_BL_EF[(abs(results_BL_EF$log2FC)<1) & 
+                                       (abs(results_BL_EF$FDR)<=0.1),])
+efer_sig_fc_pval = rownames(results_BL_EF[(abs(results_EF_ER$log2FC)<1) & 
+                                       (abs(results_EF_ER$FDR)<=0.1),])
+bler_sig_fc_pval = rownames(results_BL_ER[(abs(results_BL_ER$log2FC)<1) & 
+                                       (abs(results_BL_ER$FDR)<=0.1),])
+
+setwd("./SCRIPTS/Proteomics Analysis/VennDiagrams")
+venn.diagram(main='Delta changes Proteins_OnlyFDR',
+  x = list(blef_sig_fc_pval, efer_sig_fc_pval, bler_sig_fc_pval),
+  category.names = c("BLEF" , "EFER " , "BLER"),
+  filename = 'VennD_Delta changes Proteins_OnlyFDR.png',
+  output=TRUE
+)
+
+intersect(blef_sig_fc_pval, efer_sig_fc_pval)
+```
+
+# Save Significant Correlated Proteins in RDA
+
+```{r}
+# Save significant protein fold changes
+setwd("./SCRIPTS/Proteomics Analysis")
+save(fc_blw1, fc_blef,fc_efer,fc_bler,
+     blef_blw1_intrsct, blef_efer_intrsct,
+     file="RDA_Proteins_FC.rda")
+```

@@ -1,0 +1,301 @@
+---
+title: "PF_Proteomics_Figure 1 Biomarkers correlation"
+author: 'Volcano plots - Only BL, EF, ER timepoints'
+date: "SJ"
+output:
+  html_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+  pdf_document:
+    toc: yes
+    number_sections: true
+    toc_depth: 5
+urlcolor: blue
+linkcolor: red
+---
+
+```{r global_options, include=FALSE}
+rm(list = ls())
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+library(dplyr)
+library(forecast)
+library(kableExtra)
+library(readxl) # Input file is xlsx (not csv)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment=NA, warning=FALSE,
+                      fig.align = 'center',fig.width = 6, fig.asp = 0.8, 
+                      out.width = "80%")
+#knitr::opts_knit$set(root.dir = "G:/My Drive/Prolonged_Fasting_Study")
+knitr::opts_knit$set(root.dir = "../..")
+theme_update(plot.title = element_text(hjust = 0.5)) # center plots
+```
+
+
+# Useful functions
+
+```{r, message=FALSE}
+source("./Functions/Metabolomics functions_SJ_GF.R")
+source("./Functions/Correlation_functions.R")
+```
+
+# Working directory and datasets
+```{r}
+load("./SCRIPTS/RDA_Non_imputed_dfs_SJ.rda")
+setwd("./DATA/PROLONGED FASTING/GTAC_somascan/PF_Somalogic_18-045")
+df_proteomics=read_excel("Cleaned_Proteomics data_AM.xlsx",sheet = "Sheet2_SJedit")
+```
+
+# Format dataset structure
+
+```{r}
+# Clean proteomics data
+### !! Only run following code altogether
+df_proteomics = data.frame(Timept_ID=paste(df_proteomics$ID,
+                                           df_proteomics$Timepoint,sep = "."),
+                           df_proteomics[,-c(1:5)])
+
+# Transposed for convenient merging on Timepoint+ID (not used here)
+Timept_ID=df_proteomics$Timept_ID
+df_proteomics<- data.frame(t(df_proteomics[,-1]))
+colnames(df_proteomics) <- Timept_ID
+
+# Get named group factor
+group<-factor(sub(".*\\.", "", colnames(df_proteomics)))
+names(group)<-colnames(df_proteomics)
+
+# Normalise each row (in case of skews)
+df_proteomics<-data.frame(t(apply(df_proteomics,1,BoxCoxTransf)))
+
+# Biomarkers
+### !! Only run following code altogether
+df_main = data.frame(Timept_ID=paste(df_fast_wide$ID,df_fast_wide$Timepoint,sep = "."),
+                     df_fast_wide[,-c(1,2)])
+
+# Transposed for convenient merging on Timepoint+ID (not used here)
+Timept_ID=df_main$Timept_ID
+df_main<- data.frame(t(df_main[,-1]))
+colnames(df_main) <- Timept_ID
+
+(NAs_cols=which(colMeans(is.na(df_main))!=0)) # Bililrubin, UrineSG, U_ketones, U_pH removed
+colSums(is.na(df_main[,NAs_cols]))
+df_main=df_main[-c(22,33,55,57),]
+###
+
+# Normalise each row (in case of skews)
+df_main<-data.frame(t(apply(df_main,1,BoxCoxTransf)))
+
+```
+
+# Correlation of Figure 1 Biomarkers with Proteins
+
+## Panel A
+
+### BHB
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Beta.hydroxy.butyrate)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "BHB"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_bhb<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "BHB", main_title="BHB Volcano Plot")
+```
+
+### Cortisol
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Cortisol)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Cortisol"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_cort<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Cortisol", main_title="Cortisol Volcano Plot")
+```
+
+### IGF.1
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, IGF.1)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "IGF.1"
+
+# Only BL, EF, ER timepoints
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_igf1<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "IGF.1", main_title="IGF.1 Volcano Plot")
+```
+
+### FreeT3
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, FreeT3)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "FreeT3"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_t3<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "FreeT3", main_title="FreeT3 Volcano Plot")
+```
+
+## Panel B
+
+### Glucose
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Glucose)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Glucose"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_gluc<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Glucose", main_title="Glucose Volcano Plot")
+```
+
+### Insulin
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Insulin)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Insulin_biomarker"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_ins<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Insulin_biomarker", main_title="Insulin Volcano Plot")
+```
+
+### Non_HDL_Chol
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Non_HDL_Chol)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Non_HDL_Chol"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_nonhdlchol<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Non_HDL_Chol", main_title="Non_HDL_Chol Volcano Plot")
+```
+
+### Triglycerides
+
+```{r}
+df_merged<-func_merge_metabolomics_biomarker(df_proteomics,df_main, Triglycerides)
+rownames(df_merged)[rownames(df_merged)=="biomarker"] <- "Triglycerides"
+
+# Only BL, EF, ER timepoints (no missing values present)
+df_blefer=select(df_merged, matches(".BL|.EF|.ER"))
+```
+
+#### Correlation results table
+
+```{r}
+corr_table = func_corr_results_table(df_blefer)
+ corr_table[abs(corr_table$FDR)<=0.2,] %>% func_Kable()
+corr_tg<-rownames( corr_table[abs(corr_table$FDR)<=0.2,])
+```
+
+#### Volcano Plot
+
+```{r}
+func_volcano_plot(corr_table, biomarker = "Triglycerides", main_title="Triglycerides Volcano Plot")
+```
+
+# Save Significant Correlated Proteins in RDA
+
+```{r}
+# Save proteins correlated with biomarkers (only BL EF ER timepts)
+setwd("./SCRIPTS/Proteomics Analysis")
+save(corr_bhb,corr_cort,corr_igf1, corr_t3,
+     corr_gluc,corr_ins,corr_nonhdlchol,corr_tg ,
+     file="RDA_BLEFER_Correlation_Proteins_Biomarkers.rda")
+```
